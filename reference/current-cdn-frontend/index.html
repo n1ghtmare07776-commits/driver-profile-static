@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>司机画像</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <header>
+          <h1>司机画像</h1>
+          <div class="snapshot-meta">
+            <p id="metaText">读取静态快照中...</p>
+            <p id="windowText"></p>
+          </div>
+          <div id="loadProgress" class="load-progress" aria-label="静态数据加载进度">
+            <div class="load-progress-bar">
+              <span id="loadProgressBar"></span>
+            </div>
+            <div id="loadProgressText" class="load-progress-text">准备读取静态数据...</div>
+          </div>
+        </header>
+        <section class="filter-panel" aria-label="组合筛选">
+          <label>
+            司机ID
+            <input id="driverIdInput" type="search" placeholder="输入司机ID" />
+          </label>
+          <label>
+            城市（可多选）
+            <div id="citySelect" class="token-picker" role="group" aria-label="城市多选"></div>
+          </label>
+          <label>
+            公司（可多选）
+            <div id="companySelect" class="token-picker" role="group" aria-label="公司多选"></div>
+          </label>
+          <label>
+            产品线（二级，可多选）
+            <div id="productSelect" class="token-picker" role="group" aria-label="产品线二级多选"></div>
+          </label>
+          <fieldset id="advancedFilters" class="advanced-filters">
+            <legend>高级筛选</legend>
+            <div class="range-filter" data-field="bestRiskTierRank">
+              <span>近七天最高排名</span>
+              <input id="bestRiskTierRank_min" type="number" inputmode="numeric" placeholder="最小" />
+              <input id="bestRiskTierRank_max" type="number" inputmode="numeric" placeholder="最大，例如50000" />
+            </div>
+            <div class="range-filter" data-field="age">
+              <span>年龄</span>
+              <input id="age_min" type="number" inputmode="decimal" placeholder="最小" />
+              <input id="age_max" type="number" inputmode="decimal" placeholder="最大" />
+            </div>
+            <div class="range-filter" data-field="consecutive_days">
+              <span>连续出车天数</span>
+              <input id="consecutive_days_min" type="number" inputmode="decimal" placeholder="最小" />
+              <input id="consecutive_days_max" type="number" inputmode="decimal" placeholder="最大" />
+            </div>
+            <div class="range-filter" data-field="server_dur_hour">
+              <span>服务时长</span>
+              <input id="server_dur_hour_min" type="number" inputmode="decimal" placeholder="最小" />
+              <input id="server_dur_hour_max" type="number" inputmode="decimal" placeholder="最大" />
+            </div>
+            <div class="range-filter" data-field="order_cnt_21_09_7d_rate">
+              <span>夜间占比（0-1）</span>
+              <input id="order_cnt_21_09_7d_rate_min" type="number" inputmode="decimal" step="0.01" placeholder="最小" />
+              <input id="order_cnt_21_09_7d_rate_max" type="number" inputmode="decimal" step="0.01" placeholder="最大" />
+            </div>
+            <div class="range-filter" data-field="sleep_deprivation_days">
+              <span>睡眠不足天数</span>
+              <input id="sleep_deprivation_days_min" type="number" inputmode="decimal" placeholder="最小" />
+              <input id="sleep_deprivation_days_max" type="number" inputmode="decimal" placeholder="最大" />
+            </div>
+            <label class="select-filter">
+              <span>是否组织化</span>
+              <select id="isOrganizedSelect">
+                <option value="">全部</option>
+                <option value="是">是</option>
+                <option value="否">否</option>
+              </select>
+            </label>
+          </fieldset>
+          <div class="filter-actions">
+            <button id="searchButton">查询</button>
+            <button id="resetButton" class="ghost-button" type="button">重置</button>
+          </div>
+        </section>
+        <button id="exportButton" class="ghost-button">下载当前筛选名单</button>
+        <section id="driverList" class="driver-list" aria-label="司机列表"></section>
+      </aside>
+      <section class="profile-panel">
+        <div id="stateBox" class="state-box">请选择或输入一个司机ID。</div>
+        <article id="profile" class="profile hidden"></article>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

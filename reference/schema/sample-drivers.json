@@ -1,0 +1,53 @@
+[
+  {
+    "driver_id": "100000000001",
+    "product_level2_name": "快车",
+    "age": 56,
+    "resident_city_name": "北京市",
+    "city_level": "一线",
+    "company_name": "示例公司A",
+    "consecutive_days": 5,
+    "consecutive_days_max": 12,
+    "online_dur_hour": 11.5,
+    "order_cnt_21_09_7d_rate": 0.42,
+    "sleep_deprivation_days": 2,
+    "risk_tier_rank": 128,
+    "risk_tier_score": 82.1,
+    "tired_score": 76.3,
+    "dt": "2026-06-30"
+  },
+  {
+    "driver_id": "100000000002",
+    "product_level2_name": "专车",
+    "age": 44,
+    "resident_city_name": "上海市",
+    "city_level": "一线",
+    "company_name": "示例公司B",
+    "consecutive_days": 1,
+    "consecutive_days_max": 4,
+    "online_dur_hour": 6.8,
+    "order_cnt_21_09_7d_rate": 0.13,
+    "sleep_deprivation_days": 0,
+    "risk_tier_rank": 980,
+    "risk_tier_score": 45.4,
+    "tired_score": 31.2,
+    "dt": "2026-06-30"
+  },
+  {
+    "driver_id": "100000000003",
+    "product_level2_name": "优享",
+    "age": 61,
+    "resident_city_name": "广州市",
+    "city_level": "一线",
+    "company_name": "示例公司A",
+    "consecutive_days": 8,
+    "consecutive_days_max": 18,
+    "online_dur_hour": 12.9,
+    "order_cnt_21_09_7d_rate": 0.58,
+    "sleep_deprivation_days": 4,
+    "risk_tier_rank": 42,
+    "risk_tier_score": 91.6,
+    "tired_score": 88.9,
+    "dt": "2026-07-01"
+  }
+]

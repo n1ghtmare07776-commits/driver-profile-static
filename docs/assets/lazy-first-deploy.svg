@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">司机画像首次部署懒人版流程图</title>
+  <desc id="desc">解压网站包，交给 agent 安装或使用 cdn-deploy 部署 skill 或插件，运行脚本生成 dist，再上传 CDN 分享链接。</desc>
+  <rect width="1280" height="720" fill="#fff"/>
+  <path d="M42 44 C188 28, 312 36, 455 38 C692 42, 866 28, 1238 42" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round" opacity=".18"/>
+  <text x="64" y="86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="36" font-weight="800" fill="#151515">懒人版首次部署：把网站包交给 agent</text>
+  <text x="66" y="126" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" fill="#666">你只负责给压缩包和第一份 Excel，agent 安装部署工具、生成 dist、上传 CDN。</text>
+
+  <g transform="translate(70 185)">
+    <path d="M0 24 Q0 0 24 0 L278 0 Q304 0 302 25 L297 255 Q294 286 264 284 L24 284 Q-2 283 0 254 Z" fill="#fff" stroke="#181818" stroke-width="4"/>
+    <path d="M28 44 C72 36, 99 41, 142 39 C188 37, 223 41, 270 37" fill="none" stroke="#f05a28" stroke-width="6" stroke-linecap="round"/>
+    <text x="34" y="88" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="800" fill="#151515">1 解压网站包</text>
+    <text x="34" y="130" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" fill="#555">司机画像网站包.zip</text>
+    <path d="M42 162 L118 162 L139 184 L238 184 L238 238 L42 238 Z" fill="#fff6dd" stroke="#151515" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M45 187 C89 178, 156 196, 235 185" fill="none" stroke="#1677c5" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+  </g>
+
+  <g transform="translate(488 185)">
+    <path d="M3 20 Q0 -1 24 0 L300 4 Q322 5 318 32 L309 253 Q306 285 274 282 L26 282 Q-1 281 0 249 Z" fill="#fff" stroke="#181818" stroke-width="4"/>
+    <text x="34" y="86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="800" fill="#151515">2 交给 agent</text>
+    <text x="34" y="128" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" fill="#555">复制首次部署提示词</text>
+    <rect x="34" y="154" width="246" height="74" rx="14" fill="#f7fbff" stroke="#1677c5" stroke-width="3"/>
+    <text x="55" y="186" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#333">prepare-static-site</text>
+    <text x="55" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#333">import-driver-data</text>
+    <circle cx="256" cy="82" r="28" fill="#161616"/>
+    <circle cx="247" cy="76" r="4" fill="#fff"/>
+    <circle cx="265" cy="77" r="4" fill="#fff"/>
+    <path d="M244 91 Q256 100 268 91" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <path d="M242 54 C232 40, 236 28, 250 24" fill="none" stroke="#161616" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(902 185)">
+    <path d="M6 18 Q3 -2 30 0 L302 2 Q326 4 323 30 L314 254 Q311 287 276 283 L24 283 Q-2 282 0 248 Z" fill="#fff" stroke="#181818" stroke-width="4"/>
+    <text x="34" y="86" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="800" fill="#151515">3 上传 CDN</text>
+    <text x="34" y="128" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" fill="#555">使用部署 skill / 插件</text>
+    <rect x="58" y="151" width="212" height="40" rx="14" fill="#fff7ec" stroke="#f05a28" stroke-width="3"/>
+    <text x="81" y="178" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="700" fill="#333">cdn-deploy</text>
+    <path d="M70 215 C91 174, 128 182, 142 200 C161 168, 213 177, 222 215 C255 217, 260 256, 224 258 L71 258 C39 256, 43 219, 70 215 Z" fill="#eaf5ff" stroke="#151515" stroke-width="3"/>
+    <text x="88" y="242" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="800" fill="#1677c5">CDN</text>
+    <path d="M172 256 C214 284, 251 293, 287 288" fill="none" stroke="#f05a28" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <path d="M382 323 C421 316, 445 316, 472 324" fill="none" stroke="#151515" stroke-width="5" stroke-linecap="round"/>
+  <path d="M455 305 L478 325 L452 341" fill="none" stroke="#151515" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M807 323 C848 316, 874 316, 898 324" fill="none" stroke="#151515" stroke-width="5" stroke-linecap="round"/>
+  <path d="M881 305 L904 325 L878 341" fill="none" stroke="#151515" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g transform="translate(95 550)">
+    <path d="M0 0 C176 22, 338 9, 520 15 C721 22, 920 -2, 1075 16" fill="none" stroke="#f05a28" stroke-width="5" stroke-linecap="round"/>
+    <text x="0" y="50" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="700" fill="#151515">最后效果：同事打开同一个 CDN 链接，就能使用司机画像。</text>
+    <text x="0" y="88" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" fill="#666">插图仅解释流程，不包含真实司机 ID、健康指标或完整画像数据。</text>
+  </g>
+</svg>

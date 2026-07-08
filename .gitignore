@@ -1,0 +1,20 @@
+# Real driver data and generated static data must not be committed.
+data/
+dist/
+
+# Generated build artifacts and deploy packages.
+*.zip
+
+# Local caches and OS/editor files.
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+
+# Raw spreadsheets or ad hoc exports may contain production data.
+*.xlsx
+*.xls
+*.csv
