@@ -593,6 +593,11 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.driver-card:focus-visible {
+  outline: 3px solid rgba(24, 95, 165, 0.18);
+  outline-offset: 2px;
+}
+
 .driver-card.active {
   border-color: var(--accent);
   background: var(--bg-active);
@@ -645,6 +650,13 @@ button:disabled {
   white-space: nowrap;
 }
 
+.driver-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
 .driver-metrics {
   display: flex;
   flex-direction: column;
@@ -691,11 +703,51 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.badge-strategy {
+  border: 1px solid #cfe0f3;
+  background: var(--accent-2);
+  color: var(--accent);
+}
+
 .metric-label {
   color: var(--text-tertiary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.contact-status {
+  width: auto;
+  align-self: flex-end;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.contact-status:hover {
+  box-shadow: none;
+}
+
+.contact-status-pending {
+  border-color: var(--line-strong);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.contact-status-contacted {
+  border-color: #b7e2d3;
+  background: #e7f7f1;
+  color: #0f6e56;
+}
+
+.contact-status-followup {
+  border-color: #f3d38a;
+  background: #fff8e6;
+  color: #854f0b;
 }
 
 .empty-list {
@@ -706,6 +758,21 @@ button:disabled {
   font-size: 13px;
   line-height: 1.6;
   background: var(--bg-panel);
+}
+
+.empty-title-small {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.empty-hints {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .load-more {
@@ -1032,11 +1099,37 @@ button:disabled {
 }
 
 .strategy-card {
+  position: relative;
+  overflow: hidden;
   padding: 15px;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast),
     transform var(--transition-fast);
+}
+
+.strategy-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--line-strong);
+}
+
+.strategy-priority-primary::before {
+  background: var(--risk-high-fg);
+}
+
+.strategy-priority-secondary::before {
+  background: var(--accent);
+}
+
+.strategy-priority-reference::before {
+  background: var(--line-strong);
+}
+
+.strategy-priority-primary {
+  border-color: #f5c6cb;
 }
 
 .strategy-card:hover {
@@ -1097,6 +1190,24 @@ button:disabled {
   border-color: #ffeaa7;
   background: #fffdf5;
   color: #8a6d3b;
+}
+
+.strategy-badge-priority-primary {
+  border-color: #f5c6cb;
+  background: #fdf2f2;
+  color: #c0392b;
+}
+
+.strategy-badge-priority-secondary {
+  border-color: #cfe0f3;
+  background: var(--accent-2);
+  color: var(--accent);
+}
+
+.strategy-badge-priority-reference {
+  border-color: var(--line);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
 }
 
 .strategy-translation {
@@ -1238,4 +1349,47 @@ button:disabled {
 .field-value {
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+@media print {
+  body {
+    min-width: 0;
+    background: #ffffff;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar,
+  .strategy-copy,
+  .load-progress {
+    display: none !important;
+  }
+
+  .profile-panel {
+    padding: 0;
+    overflow: visible;
+  }
+
+  .profile-header,
+  .summary,
+  .strategy-card,
+  .info-card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .strategy-list,
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-reference {
+    display: none;
+  }
+
+  a::after {
+    content: "";
+  }
 }

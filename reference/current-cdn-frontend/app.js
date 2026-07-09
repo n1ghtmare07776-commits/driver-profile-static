@@ -39,6 +39,14 @@ let staticDataReady = false;
 let userHasRenderedResults = false;
 const tokenPickers = [];
 const listPageSize = 50;
+const contactStatusStorageKey = "driver-profile-contact-status-v1";
+const accessLogStorageKey = "driver-profile-access-log-v1";
+const contactStatusFlow = ["pending", "contacted", "followup"];
+const contactStatusLabels = {
+  pending: "待联系",
+  contacted: "已联系",
+  followup: "待回访",
+};
 
 const advancedFilterFields = [
   "bestRiskTierRank",
@@ -187,6 +195,38 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function readJsonStorage(key, fallback) {
+  try {
+    if (!window.localStorage) {
+      return fallback;
+    }
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function writeJsonStorage(key, value) {
+  try {
+    if (window.localStorage) {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch (error) {
+    // 本地留痕失败不应影响查询和画像展示。
+  }
+}
+
+function formatLocalTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function compactTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
 async function fetchJson(url) {
@@ -497,6 +537,41 @@ function rankNumber(value) {
 function scoreNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
+function tiredRiskLevel(value) {
+  const score = scoreNumber(value);
+  if (score === -Infinity) {
+    return { key: "unknown", label: "疲劳暂无", badgeClass: "badge-num" };
+  }
+  if (score > 25) {
+    return { key: "high", label: "疲劳高", badgeClass: "badge-high" };
+  }
+  if (score >= 15) {
+    return { key: "mid", label: "疲劳中", badgeClass: "badge-mid" };
+  }
+  return { key: "low", label: "疲劳低", badgeClass: "badge-low" };
+}
+
+function strategyHitCount(driver) {
+  if (Array.isArray(driver.strategyKeys)) {
+    return driver.strategyKeys.filter((key) => key && key !== "regular-care").length;
+  }
+  if (Array.isArray(driver.strategies)) {
+    return driver.strategies.filter((strategy) => strategy?.key !== "regular-care").length;
+  }
+  return 0;
+}
+
+function priorityMeta(priority) {
+  const value = Number(priority);
+  if (Number.isFinite(value) && value <= 20) {
+    return { kind: "primary", label: "优先沟通" };
+  }
+  if (Number.isFinite(value) && value <= 50) {
+    return { kind: "secondary", label: "次要补充" };
+  }
+  return { kind: "reference", label: "参考信息" };
 }
 
 function compareFilteredDrivers(left, right) {
@@ -848,6 +923,66 @@ function currentFilters() {
   };
 }
 
+function filtersSummary(filters = currentFilters()) {
+  const parts = [];
+  if (filters.driver_id) {
+    parts.push(`司机ID包含${filters.driver_id}`);
+  }
+  if (filters.city?.length) {
+    parts.push(`城市=${filters.city.join("/")}`);
+  }
+  if (filters.company?.length) {
+    parts.push(`公司=${filters.company.join("/")}`);
+  }
+  if (filters.product?.length) {
+    parts.push(`产品线=${filters.product.join("/")}`);
+  }
+  if (filters.dt) {
+    parts.push(`日期=${filters.dt}`);
+  }
+  if (filters.is_organized) {
+    parts.push(`是否组织化=${filters.is_organized}`);
+  }
+  advancedFilterFields.forEach((field) => {
+    const minValue = filters[`${field}_min`];
+    const maxValue = filters[`${field}_max`];
+    if (minValue || maxValue) {
+      parts.push(`${field}${minValue ? `≥${minValue}` : ""}${maxValue ? `≤${maxValue}` : ""}`);
+    }
+  });
+  return parts.length ? parts.join("；") : "无筛选条件";
+}
+
+function contactStorageKey(driver) {
+  return `${driver.driverId || ""}::${driver.dataDate || ""}`;
+}
+
+function contactStatusForDriver(driver) {
+  const statusMap = readJsonStorage(contactStatusStorageKey, {});
+  return statusMap[contactStorageKey(driver)] || "pending";
+}
+
+function setContactStatusForDriver(driver, status) {
+  const statusMap = readJsonStorage(contactStatusStorageKey, {});
+  statusMap[contactStorageKey(driver)] = status;
+  writeJsonStorage(contactStatusStorageKey, statusMap);
+}
+
+function nextContactStatus(currentStatus) {
+  const index = contactStatusFlow.indexOf(currentStatus);
+  return contactStatusFlow[(index + 1) % contactStatusFlow.length] || contactStatusFlow[0];
+}
+
+function logLocalAudit(action, detail = {}) {
+  const logs = readJsonStorage(accessLogStorageKey, []);
+  logs.unshift({
+    ts: formatLocalTimestamp(),
+    action,
+    ...detail,
+  });
+  writeJsonStorage(accessLogStorageKey, logs.slice(0, 100));
+}
+
 function currentAdvancedFilters() {
   return Object.fromEntries(
     advancedFilterInputs
@@ -941,6 +1076,77 @@ function matchesFilters(driver, filters) {
   return matchesAdvancedFilters(driver, filters);
 }
 
+function activeFilterGroups(filters) {
+  const groups = [];
+  if (filters.driver_id) {
+    groups.push({ key: "driver_id", label: "司机ID", clear: (copy) => { copy.driver_id = ""; } });
+  }
+  if (filters.city?.length) {
+    groups.push({ key: "city", label: "城市", clear: (copy) => { copy.city = []; } });
+  }
+  if (filters.company?.length) {
+    groups.push({ key: "company", label: "公司", clear: (copy) => { copy.company = []; } });
+  }
+  if (filters.product?.length) {
+    groups.push({ key: "product", label: "产品线", clear: (copy) => { copy.product = []; } });
+  }
+  if (filters.is_organized) {
+    groups.push({ key: "is_organized", label: "是否组织化", clear: (copy) => { copy.is_organized = ""; } });
+  }
+  advancedFilterFields.forEach((field) => {
+    if (filters[`${field}_min`] || filters[`${field}_max`]) {
+      groups.push({
+        key: field,
+        label: advancedFilterLabel(field),
+        clear: (copy) => {
+          copy[`${field}_min`] = "";
+          copy[`${field}_max`] = "";
+        },
+      });
+    }
+  });
+  return groups;
+}
+
+function advancedFilterLabel(field) {
+  const labels = {
+    bestRiskTierRank: "近七天最高排名",
+    age: "年龄",
+    consecutive_days: "连续出车天数",
+    server_dur_hour: "服务时长",
+    order_cnt_21_09_7d_rate: "夜间占比",
+    sleep_deprivation_days: "睡眠不足天数",
+  };
+  return labels[field] || field;
+}
+
+function countMatchedDrivers(filters) {
+  let count = 0;
+  for (const driver of allDrivers) {
+    if (matchesFilters(driver, filters)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function zeroResultHints(filters) {
+  return activeFilterGroups(filters)
+    .map((group) => {
+      const relaxed = {
+        ...filters,
+        city: [...(filters.city || [])],
+        company: [...(filters.company || [])],
+        product: [...(filters.product || [])],
+      };
+      group.clear(relaxed);
+      return { label: group.label, count: countMatchedDrivers(relaxed) };
+    })
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 3);
+}
+
 function normalizeBooleanLabel(value) {
   const text = String(value ?? "").trim();
   if (["1", "true", "是", "Y", "y", "yes", "Yes", "TRUE"].includes(text)) {
@@ -976,22 +1182,50 @@ function appendDriverCards(drivers) {
   }
   const activeKey = activeDriverKey();
   drivers.forEach((driver) => {
-    const item = document.createElement("button");
+    const item = document.createElement("div");
+    const tiredRisk = tiredRiskLevel(driver.tiredScore);
+    const strategyCount = strategyHitCount(driver);
+    const contactStatus = contactStatusForDriver(driver);
     item.className = `driver-card${driverKey(driver) === activeKey ? " active" : ""}`;
     item.dataset.driverKey = driverKey(driver);
+    item.setAttribute("role", "button");
+    item.setAttribute("tabindex", "0");
     item.innerHTML = `
       <div class="driver-avatar">${escapeHtml(driverInitial(driver.driverId))}</div>
       <div class="driver-info">
         <div class="driver-id">${escapeHtml(driver.driverId)}</div>
         <div class="driver-sub">${escapeHtml(driver.subtitle || "暂无基础信息")}</div>
+        <div class="driver-tags">
+          <span class="badge badge-strategy">策略 ${escapeHtml(strategyCount)}</span>
+          <span class="badge ${escapeHtml(tiredRisk.badgeClass)}">${escapeHtml(tiredRisk.label)}</span>
+        </div>
       </div>
       <div class="driver-metrics">
         <div class="metric-row">
           <span class="badge badge-num">排名 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))}</span>
         </div>
         <div class="metric-label">风险 ${escapeHtml(displayValue(driver.riskTierScore))} · 疲劳 ${escapeHtml(displayValue(driver.tiredScore))}</div>
+        <button class="contact-status contact-status-${escapeHtml(contactStatus)}" type="button" data-contact-status="true">${escapeHtml(contactStatusLabels[contactStatus] || "待联系")}</button>
       </div>`;
     item.addEventListener("click", () => loadProfile(driver));
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        loadProfile(driver);
+      }
+    });
+    item.querySelector("[data-contact-status]")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const nextStatus = nextContactStatus(contactStatusForDriver(driver));
+      setContactStatusForDriver(driver, nextStatus);
+      logLocalAudit("contact_status", {
+        driverId: driver.driverId,
+        dataDate: driver.dataDate,
+        status: contactStatusLabels[nextStatus] || nextStatus,
+      });
+      item.querySelector("[data-contact-status]").className = `contact-status contact-status-${nextStatus}`;
+      item.querySelector("[data-contact-status]").textContent = contactStatusLabels[nextStatus] || "待联系";
+    });
     listEl.appendChild(item);
   });
 }
@@ -1028,7 +1262,8 @@ function renderList(drivers, options = {}) {
   if (!drivers.length) {
     const empty = document.createElement("div");
     empty.className = "empty-list";
-    empty.textContent = "输入司机ID，或选择城市、公司、产品线、排名范围后显示匹配结果。";
+    empty.innerHTML = options.emptyHtml ||
+      escapeHtml(options.emptyMessage || "输入司机ID，或选择城市、公司、产品线、排名范围后显示匹配结果。");
     listEl.appendChild(empty);
     return;
   }
@@ -1054,7 +1289,10 @@ function renderMoreListItems() {
   }
   const summary = listEl.querySelector(".list-summary");
   if (summary) {
-    summary.textContent = `匹配 ${currentListRows.length} 位司机，当前显示 ${renderedListCount} 位`;
+    const percent = currentListRows.length
+      ? Math.round((renderedListCount / currentListRows.length) * 100)
+      : 0;
+    summary.textContent = `匹配 ${currentListRows.length} 位司机，当前显示 ${renderedListCount} 位（${percent}%）`;
   }
 }
 
@@ -1071,11 +1309,18 @@ function showFirstMatchedProfile(rows) {
 }
 
 function applyFilterResults(rows) {
-  renderList(rows);
   if (!rows.length) {
-    showState("当前条件没有匹配司机。");
+    const hints = zeroResultHints(currentFilters());
+    const hintHtml = hints.length
+      ? `<div class="empty-title-small">当前条件没有匹配司机</div><div class="empty-hints">${hints
+          .map((hint) => `<div>去掉「${escapeHtml(hint.label)}」后约有 ${escapeHtml(hint.count)} 位匹配</div>`)
+          .join("")}</div>`
+      : "当前条件没有匹配司机。可以尝试放宽城市、产品线或高级筛选范围。";
+    renderList(rows, { emptyHtml: hintHtml });
+    showState("当前条件没有匹配司机。左侧已给出可尝试放宽的条件。");
     return;
   }
+  renderList(rows);
   try {
     loadProfile(rows[0]);
   } catch (error) {
@@ -1390,12 +1635,17 @@ function renderStrategies(strategies = []) {
       </div>`;
   };
   return `<section class="strategy-list">${items
-    .map(
-      (strategy) => `
-        <article class="strategy-card">
+    .map((strategy) => {
+      const priority = priorityMeta(strategy.priority);
+      const badges = [
+        { kind: `priority-${priority.kind}`, label: priority.label },
+        ...(Array.isArray(strategy.badges) ? strategy.badges : []),
+      ];
+      return `
+        <article class="strategy-card strategy-priority-${escapeHtml(priority.kind)}">
           <div class="strategy-card-heading">
             <h3>${escapeHtml(strategy.title || "常规关怀")}</h3>
-            ${renderBadges(strategy.badges)}
+            ${renderBadges(badges)}
           </div>
           ${renderTranslation(strategy)}
           <details class="strategy-reference">
@@ -1407,8 +1657,8 @@ function renderStrategies(strategies = []) {
               <dd>${escapeHtml(strategy.advice || "可做常规状态确认，保持关怀式沟通。")}</dd>
             </dl>
           </details>
-        </article>`,
-    )
+        </article>`;
+    })
     .join("")}</section>`;
 }
 
@@ -1625,6 +1875,11 @@ function renderProfile(profile) {
     `.driver-card[data-driver-key="${CSS.escape(profileEl.dataset.driverKey)}"]`,
   );
   active?.classList.add("active");
+  logLocalAudit("view", {
+    driverId: profile.driverId,
+    dataDate: profile.meta?.dataDate || profile.source?.dataDate || "",
+    filtersSummary: filtersSummary(),
+  });
 }
 
 function findBestDriver(driverId, dt = "") {
@@ -1662,7 +1917,13 @@ function csvCell(value) {
 }
 
 function downloadCsv(rows) {
+  const exportedAt = formatLocalTimestamp();
+  const filterText = filtersSummary();
   const lines = [
+    `# 导出时间: ${exportedAt}`,
+    `# 筛选条件: ${filterText}`,
+    `# 记录数: ${rows.length}`,
+    `# 静态站点生成时间: ${resolveStaticGeneratedAt(staticManifest, staticMeta) || "暂无数据"}`,
     ["司机id", "综合画像"].map(csvCell).join(","),
     ...rows.map((driver) => [driver.driverId, driver.summary || buildSummaryForDriver(driver)].map(csvCell).join(",")),
   ];
@@ -1672,11 +1933,15 @@ function downloadCsv(rows) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "司机画像_筛选结果.csv";
+  link.download = `司机画像_筛选结果_${compactTimestamp()}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  logLocalAudit("export", {
+    rowCount: rows.length,
+    filtersSummary: filterText,
+  });
 }
 
 async function downloadCurrentFilter() {
@@ -1736,6 +2001,33 @@ searchButton.addEventListener("click", async () => {
 driverIdInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     searchButton.click();
+  }
+});
+
+listEl.addEventListener("keydown", (event) => {
+  if (!["ArrowDown", "ArrowUp"].includes(event.key)) {
+    return;
+  }
+  const cards = Array.from(listEl.querySelectorAll(".driver-card"));
+  const currentIndex = cards.indexOf(event.target.closest(".driver-card"));
+  if (currentIndex < 0) {
+    return;
+  }
+  event.preventDefault();
+  const offset = event.key === "ArrowDown" ? 1 : -1;
+  const next = cards[Math.max(0, Math.min(cards.length - 1, currentIndex + offset))];
+  next?.focus();
+});
+
+document.addEventListener("keydown", (event) => {
+  const tagName = event.target?.tagName?.toLowerCase();
+  const isTyping = ["input", "textarea", "select"].includes(tagName) || event.target?.isContentEditable;
+  if (event.key === "/" && !isTyping) {
+    event.preventDefault();
+    driverIdInput.focus();
+  }
+  if (event.key === "Escape") {
+    document.querySelectorAll(".token-picker.open").forEach((picker) => picker.classList.remove("open"));
   }
 });
 
