@@ -1004,7 +1004,7 @@ function buildStrategyRuleIndex(config = {}) {
   const fallback = config.fallbackRule || {
     key: "regular-care",
     title: "常规关怀",
-    evidence: "当前未命中明显风险策略，或策略计算结果暂不可用。",
+    evidence: "当前没有策略指标超过配置阈值，或策略计算结果暂不可用。",
     advice: "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
     priority: 999,
   };
@@ -1039,6 +1039,10 @@ function conditionForMetric(rule, metric) {
   return strategyConditions(rule).find((item) => item.driver_metric === metric) || {};
 }
 
+function thresholdRelationLabel(operator) {
+  return operator === "<" || operator === "<=" ? "低于" : "高于";
+}
+
 function normalizeEvidenceItems(rawEvidence) {
   if (!rawEvidence) {
     return [];
@@ -1071,7 +1075,9 @@ function evidenceTextForItems(rule, evidenceItems) {
       const condition = conditionForMetric(rule, item.driverMetric);
       const label = condition.driver_metric_label || item.driverMetric || "指标";
       const unit = condition.unit || "";
-      return `${label}${formatMetricValue(item.driverValue)}${unit}，高于case均值${formatMetricValue(item.thresholdValue)}${unit}`;
+      const operator = condition.threshold?.operator || rule.threshold?.operator || ">";
+      const relation = thresholdRelationLabel(operator);
+      return `${label}${formatMetricValue(item.driverValue)}${unit}，${relation}case均值${formatMetricValue(item.thresholdValue)}${unit}`;
     })
     .join("，");
 }
@@ -1082,9 +1088,11 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
     return {
       key: fallback.key || "regular-care",
       title: fallback.title || "常规关怀",
-      evidence: fallback.evidence || "当前未命中明显风险策略。",
+      evidence: fallback.evidence || "当前没有策略指标超过配置阈值。",
       advice: fallback.advice || "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
       priority: fallback.priority || 999,
+      priority_tier: fallback.priority_tier || "",
+      badges: Array.isArray(fallback.badges) ? fallback.badges : [],
       tags: fallback.tags || [],
     };
   }
@@ -1096,6 +1104,8 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
       evidence: "该策略命中，但当前静态规则文件缺少对应展示配置。",
       advice: "请先确认策略配置版本，再做关怀式沟通。",
       priority: 999,
+      priority_tier: "",
+      badges: [],
       tags: [],
     };
   }
@@ -1103,9 +1113,11 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
   const firstEvidence = evidenceItems[0] || {};
   const firstCondition = conditionForMetric(rule, firstEvidence.driverMetric) || {};
   const matchedEvidence = evidenceTextForItems(rule, evidenceItems);
+  const thresholdOperator = firstCondition.threshold?.operator || rule.threshold?.operator || ">";
   const context = {
     driver_value: formatMetricValue(firstEvidence.driverValue),
     threshold_value: formatMetricValue(firstEvidence.thresholdValue),
+    threshold_relation: thresholdRelationLabel(thresholdOperator),
     unit: firstCondition.unit || rule.unit || "",
     driver_metric_label: firstCondition.driver_metric_label || rule.driver_metric_label || "",
     matched_evidence: matchedEvidence || "暂无可展示依据",
@@ -1116,10 +1128,36 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
     title: rule.title || key,
     category: rule.category || "",
     priority: rule.priority || 999,
+    priority_tier: rule.priority_tier || "",
+    badges: Array.isArray(rule.badges) ? rule.badges : [],
     evidence: replaceTemplate(rule.evidence_template || "{{matched_evidence}}。", context),
     advice: replaceTemplate(rule.advice_template || "可做常规状态确认，保持关怀式沟通。", context),
     tags: Array.isArray(rule.tags) ? rule.tags : [],
   };
+}
+
+function strategyRiskRank(strategy) {
+  const badges = Array.isArray(strategy.badges) ? strategy.badges : [];
+  const hasHighRisk = badges.some((badge) => badge?.kind === "high-risk");
+  const hasExplainable = badges.some((badge) => badge?.kind === "explainable");
+  if (hasHighRisk && hasExplainable) {
+    return 0;
+  }
+  if (hasHighRisk) {
+    return 1;
+  }
+  if (hasExplainable) {
+    return 2;
+  }
+  return 3;
+}
+
+function compareStrategies(left, right) {
+  const priorityDiff = (left.priority || 999) - (right.priority || 999);
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+  return strategyRiskRank(left) - strategyRiskRank(right);
 }
 
 function resolveStrategiesForDriver(driver, ruleIndex = strategyRuleIndex) {
@@ -1130,7 +1168,7 @@ function resolveStrategiesForDriver(driver, ruleIndex = strategyRuleIndex) {
   const resolvedKeys = keys.length ? keys : ["regular-care"];
   return resolvedKeys
     .map((key) => renderStrategyFromRule(key, driver, ruleIndex))
-    .sort((left, right) => (left.priority || 999) - (right.priority || 999));
+    .sort(compareStrategies);
 }
 
 function buildSummaryForDriver(driver, strategies = resolveStrategiesForDriver(driver)) {
@@ -1159,15 +1197,30 @@ function renderStrategies(strategies = []) {
     : [
         {
           title: "常规关怀",
-          evidence: "当前未命中明显风险策略，或策略计算结果暂不可用。",
+          evidence: "当前没有策略指标超过配置阈值，或策略计算结果暂不可用。",
           advice: "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
         },
       ];
+  const renderBadges = (badges = []) => {
+    const visibleBadges = Array.isArray(badges) ? badges.filter((badge) => badge?.label) : [];
+    if (!visibleBadges.length) {
+      return "";
+    }
+    return `<div class="strategy-badges">${visibleBadges
+      .map(
+        (badge) =>
+          `<span class="strategy-badge strategy-badge-${escapeHtml(badge.kind || "default")}">${escapeHtml(badge.label)}</span>`,
+      )
+      .join("")}</div>`;
+  };
   return `<section class="strategy-list">${items
     .map(
       (strategy) => `
         <article class="strategy-card">
-          <h3>${escapeHtml(strategy.title || "常规关怀")}</h3>
+          <div class="strategy-card-heading">
+            <h3>${escapeHtml(strategy.title || "常规关怀")}</h3>
+            ${renderBadges(strategy.badges)}
+          </div>
           <dl>
             <dt>依据</dt>
             <dd>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</dd>

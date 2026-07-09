@@ -206,12 +206,33 @@ const strategyIndex = sandbox.buildStrategyRuleIndex({
       title: "高龄司机",
       category: "health",
       priority: 60,
+      priority_tier: "P3",
+      badges: [{ kind: "explainable", label: "可解释" }],
       driver_metric: "age",
       driver_metric_label: "年龄",
       unit: "岁",
+      threshold: { operator: ">" },
       evidence_template: "司机年龄{{driver_value}}岁，高于case均值{{threshold_value}}岁。",
       advice_template: "沟通时关注身体承受情况。",
       tags: ["高龄"],
+    },
+    {
+      key: "minimum-sleep-low",
+      title: "最短睡眠时长偏低",
+      category: "fatigue",
+      priority: 10,
+      priority_tier: "P0",
+      badges: [
+        { kind: "high-risk", label: "高风险" },
+        { kind: "explainable", label: "可解释" },
+      ],
+      driver_metric: "min_sleep_duration",
+      driver_metric_label: "最短睡眠时长",
+      unit: "小时",
+      threshold: { operator: "<" },
+      evidence_template: "{{matched_evidence}}。",
+      advice_template: "提醒司机优先保证连续睡眠。",
+      tags: ["疲劳"],
     },
   ],
   fallbackRule: {
@@ -246,8 +267,22 @@ assert.equal(compactProfile.groups[0].items[0].displayValue, "北京市");
 assert.equal(compactProfile.groups[0].items[5].displayValue, "是");
 assert.equal(compactProfile.strategies[0].title, "高龄司机");
 assert.equal(compactProfile.strategies[0].evidence, "司机年龄56岁，高于case均值52.5岁。");
+assert.equal(compactProfile.strategies[0].badges[0].label, "可解释");
 assert.match(compactProfile.summary, /56岁，北京市，快车，示例公司A/);
 assert.match(compactProfile.summary, /重点关注：高龄司机。/);
+
+const lowSleepProfile = sandbox.resolveStaticProfile({
+  driverId: "100000000002",
+  dataDate: "2026-07-06",
+  min_sleep_duration: 3.5,
+  strategyKeys: ["minimum-sleep-low"],
+  strategyEvidence: {
+    "minimum-sleep-low": [["min_sleep_duration", 3.5, 5.2]],
+  },
+}, strategyIndex);
+assert.equal(lowSleepProfile.strategies[0].title, "最短睡眠时长偏低");
+assert.equal(lowSleepProfile.strategies[0].evidence, "最短睡眠时长3.5小时，低于case均值5.2小时。");
+assert.equal(lowSleepProfile.strategies[0].badges[0].label, "高风险");
 
 const fallbackStrategies = sandbox.resolveStrategiesForDriver(
   { strategyKeys: ["regular-care"] },

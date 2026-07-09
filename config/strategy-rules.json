@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-07",
+  "version": "2026-07-09",
   "thresholdDefaults": {
     "source": "death_case_reference",
     "policy": "case_mean",
@@ -10,11 +10,244 @@
   },
   "rules": [
     {
+      "key": "consecutive-high-intensity",
+      "enabled": true,
+      "title": "连续高强度服务偏多",
+      "category": "workload",
+      "priority": 10,
+      "priority_tier": "P0",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "consecutive_days_max_6h",
+      "driver_metric_label": "连续多天服务超过6小时的最大天数",
+      "unit": "天",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "consecutive_days_max_6h",
+        "operator": ">"
+      },
+      "evidence_template": "连续高强度服务{{driver_value}}天，高于case均值{{threshold_value}}天。",
+      "advice_template": "建议重点确认司机近期是否连续多天长时间服务，沟通时提醒把固定休息日排进出车计划，避免疲劳持续累积。",
+      "tags": [
+        "疲劳",
+        "高强度"
+      ]
+    },
+    {
+      "key": "minimum-sleep-low",
+      "enabled": true,
+      "title": "最短睡眠时长偏低",
+      "category": "fatigue",
+      "priority": 20,
+      "priority_tier": "P0",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "min_sleep_duration",
+      "driver_metric_label": "最短睡眠时长",
+      "unit": "小时",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "min_sleep_duration",
+        "operator": "<"
+      },
+      "evidence_template": "最短睡眠时长{{driver_value}}小时，低于case均值{{threshold_value}}小时。",
+      "advice_template": "建议先关怀询问近期睡眠是否充足，再提醒司机疲劳明显时减少接单或暂停出车，优先保证连续睡眠时间。",
+      "tags": [
+        "疲劳",
+        "睡眠"
+      ]
+    },
+    {
+      "key": "peak-service-duration-high",
+      "enabled": true,
+      "title": "高峰期服务时长偏高",
+      "category": "workload",
+      "priority": 30,
+      "priority_tier": "P0",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "peak_service_dur",
+      "driver_metric_label": "高峰期服务时长",
+      "unit": "小时",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "peak_service_dur",
+        "operator": ">"
+      },
+      "evidence_template": "高峰期服务时长{{driver_value}}小时，高于case均值{{threshold_value}}小时。",
+      "advice_template": "建议关注司机是否在高峰期持续高强度服务，沟通时提醒高峰后安排间歇休息，不要连续长时间满负荷驾驶。",
+      "tags": [
+        "疲劳",
+        "高强度"
+      ]
+    },
+    {
+      "key": "abnormal-driving-high",
+      "enabled": true,
+      "title": "异常驾驶次数偏高",
+      "category": "driving",
+      "priority": 40,
+      "priority_tier": "P0",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "abnormal_driving_cnt",
+      "driver_metric_label": "异常驾驶次数",
+      "unit": "次",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "abnormal_driving_cnt",
+        "operator": ">"
+      },
+      "evidence_template": "异常驾驶次数{{driver_value}}次，高于case均值{{threshold_value}}次。",
+      "advice_template": "建议沟通时用关怀口径确认近期驾驶状态和身体感受，提醒司机如出现疲劳或不适应及时休息，避免带状态问题继续出车。",
+      "tags": [
+        "驾驶行为",
+        "疲劳"
+      ]
+    },
+    {
+      "key": "temperature-change-high",
+      "enabled": true,
+      "title": "气温变化幅度偏高",
+      "category": "environment",
+      "priority": 50,
+      "priority_tier": "P1",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "temp_change_1d",
+      "driver_metric_label": "近1天气温变化幅度",
+      "unit": "度",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "temp_change_1d",
+        "operator": ">"
+      },
+      "evidence_template": "近1天气温变化幅度{{driver_value}}度，高于case均值{{threshold_value}}度。",
+      "advice_template": "建议提醒司机近期气温变化较大时注意补水、保暖或降温，身体不适时及时减少出车强度并休息。",
+      "tags": [
+        "天气",
+        "健康"
+      ]
+    },
+    {
+      "key": "sleep-risk",
+      "enabled": true,
+      "title": "睡眠状态需关注",
+      "category": "fatigue",
+      "priority": 60,
+      "priority_tier": "P1",
+      "badges": [
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "sleep_deprivation_days",
+      "driver_metric_label": "睡眠不足天数",
+      "unit": "天",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "sleep_deprivation_days",
+        "operator": ">"
+      },
+      "evidence_template": "睡眠不足天数{{driver_value}}天，高于case均值{{threshold_value}}天。",
+      "advice_template": "建议客服先询问最近休息是否规律，再提醒司机保证连续睡眠时间，疲劳明显时减少接单或暂停出车。",
+      "tags": [
+        "疲劳",
+        "睡眠"
+      ]
+    },
+    {
+      "key": "service-duration-7d-high",
+      "enabled": true,
+      "title": "近7天服务时长偏高",
+      "category": "workload",
+      "priority": 70,
+      "priority_tier": "P1",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        }
+      ],
+      "driver_metric": "server_dur_sum_7d",
+      "driver_metric_label": "近7天服务时长总和",
+      "unit": "小时",
+      "threshold": {
+        "source": "death_case_reference",
+        "policy": "case_mean",
+        "reference_metric": "server_dur_sum_7d",
+        "operator": ">"
+      },
+      "evidence_template": "近7天服务时长{{driver_value}}小时，高于case均值{{threshold_value}}小时。",
+      "advice_template": "建议关注司机近7天服务负荷是否持续偏高，沟通时提醒把短休和整休穿插进出车计划，避免连续累积疲劳。",
+      "tags": [
+        "疲劳"
+      ]
+    },
+    {
       "key": "service-duration-high",
       "enabled": true,
       "title": "服务时长偏高",
       "category": "workload",
-      "priority": 10,
+      "priority": 80,
+      "priority_tier": "P1",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
       "condition": {
         "any": [
           {
@@ -48,11 +281,56 @@
       ]
     },
     {
+      "key": "consecutive-work",
+      "enabled": true,
+      "title": "连续出车偏多",
+      "category": "workload",
+      "priority": 90,
+      "priority_tier": "P1",
+      "badges": [
+        {
+          "kind": "high-risk",
+          "label": "高风险"
+        },
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "condition": {
+        "any": [
+          {
+            "driver_metric": "consecutive_days",
+            "driver_metric_label": "连续出车天数",
+            "unit": "天",
+            "threshold": {
+              "source": "death_case_reference",
+              "policy": "case_mean",
+              "reference_metric": "work_days_7d",
+              "operator": ">"
+            }
+          }
+        ]
+      },
+      "evidence_template": "{{matched_evidence}}。",
+      "advice_template": "重点提醒司机安排间歇休息，不要长期无休连续跑车；可以建议设置固定休息日，避免疲劳累积影响身体和驾驶安全。",
+      "tags": [
+        "疲劳"
+      ]
+    },
+    {
       "key": "night-work",
       "enabled": true,
       "title": "夜间出车较多",
       "category": "workload",
-      "priority": 20,
+      "priority": 100,
+      "priority_tier": "P2",
+      "badges": [
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
       "driver_metric": "order_cnt_21_09_7d_rate",
       "driver_metric_label": "夜间出车占比",
       "unit": "",
@@ -69,64 +347,29 @@
       ]
     },
     {
-      "key": "sleep-risk",
+      "key": "deep-night-peak",
       "enabled": true,
-      "title": "睡眠状态需关注",
-      "category": "fatigue",
-      "priority": 30,
-      "driver_metric": "sleep_deprivation_days",
-      "driver_metric_label": "睡眠不足天数",
-      "unit": "天",
-      "threshold": {
-        "source": "death_case_reference",
-        "policy": "case_mean",
-        "reference_metric": "sleep_deprivation_days",
-        "operator": ">"
-      },
-      "evidence_template": "睡眠不足天数{{driver_value}}天，高于case均值{{threshold_value}}天。",
-      "advice_template": "建议客服先询问最近休息是否规律，再提醒司机保证连续睡眠时间，疲劳明显时减少接单或暂停出车。",
-      "tags": [
-        "疲劳"
-      ]
-    },
-    {
-      "key": "non-listening-period",
-      "enabled": true,
-      "title": "近期空闲间隔偏多",
+      "title": "深夜高峰服务偏多",
       "category": "workload",
-      "priority": 40,
-      "driver_metric": "past_7_day_non_listening_period",
-      "driver_metric_label": "近7天非听单时段",
+      "priority": 110,
+      "priority_tier": "P2",
+      "badges": [
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
+      "driver_metric": "r_deep_night_peak",
+      "driver_metric_label": "深夜高峰服务偏好/占比",
       "unit": "",
       "threshold": {
         "source": "death_case_reference",
         "policy": "case_mean",
-        "reference_metric": "past_7_day_non_listening_period",
+        "reference_metric": "r_deep_night_peak",
         "operator": ">"
       },
-      "evidence_template": "近7天非听单时段{{driver_value}}，高于case均值{{threshold_value}}。",
-      "advice_template": "沟通时可确认司机近期出车节奏是否被等待、休息或其他事务打断，再结合实际情况做关怀提醒。",
-      "tags": [
-        "节奏"
-      ]
-    },
-    {
-      "key": "consecutive-work",
-      "enabled": true,
-      "title": "连续出车偏多",
-      "category": "workload",
-      "priority": 50,
-      "driver_metric": "consecutive_days",
-      "driver_metric_label": "连续出车天数",
-      "unit": "天",
-      "threshold": {
-        "source": "death_case_reference",
-        "policy": "case_mean",
-        "reference_metric": "work_days_7d",
-        "operator": ">"
-      },
-      "evidence_template": "连续出车{{driver_value}}天，高于case均值{{threshold_value}}天。",
-      "advice_template": "重点提醒司机安排间歇休息，不要长期无休连续跑车；可以建议设置固定休息日，避免疲劳累积影响身体和驾驶安全。",
+      "evidence_template": "深夜高峰服务占比{{driver_value}}，高于case均值{{threshold_value}}。",
+      "advice_template": "建议沟通时确认司机是否长期深夜出车，引导尽量固定休息时间；收入允许时，可建议减少连续深夜出车。",
       "tags": [
         "疲劳"
       ]
@@ -136,7 +379,14 @@
       "enabled": true,
       "title": "高龄司机",
       "category": "health",
-      "priority": 60,
+      "priority": 300,
+      "priority_tier": "P3",
+      "badges": [
+        {
+          "kind": "explainable",
+          "label": "可解释"
+        }
+      ],
       "driver_metric": "age",
       "driver_metric_label": "年龄",
       "unit": "岁",
@@ -156,7 +406,7 @@
   "fallbackRule": {
     "key": "regular-care",
     "title": "常规关怀",
-    "evidence": "当前没有任何指标高于case均值。",
+    "evidence": "当前没有策略指标超过配置阈值。",
     "advice": "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
     "priority": 999
   }

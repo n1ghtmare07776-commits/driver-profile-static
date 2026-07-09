@@ -23,11 +23,18 @@ DEFAULT_REFERENCE_CANDIDATES = [
 NUMERIC_FIELDS = [
     "age",
     "consecutive_days",
+    "consecutive_days_max_6h",
+    "min_sleep_duration",
+    "peak_service_dur",
+    "abnormal_driving_cnt",
+    "temp_change_1d",
     "consecutive_days_max",
     "online_dur_hour",
     "order_cnt_21_09_7d_rate",
+    "r_deep_night_peak",
     "sleep_deprivation_days",
     "server_dur_hour",
+    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
     "lately_30d_online_dur_hour",
@@ -45,10 +52,17 @@ NUMERIC_FIELDS = [
 STATIC_DRIVER_NUMERIC_FIELDS = [
     "age",
     "consecutive_days",
+    "consecutive_days_max_6h",
+    "min_sleep_duration",
+    "peak_service_dur",
+    "abnormal_driving_cnt",
+    "temp_change_1d",
     "server_dur_hour",
+    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
     "order_cnt_21_09_7d_rate",
+    "r_deep_night_peak",
     "sleep_deprivation_days",
     "past_7_day_non_listening_period",
     "risk_tier_rank",
@@ -65,10 +79,17 @@ COMPACT_DRIVER_SCHEMA = [
     "isOrganized",
     "age",
     "consecutive_days",
+    "consecutive_days_max_6h",
+    "min_sleep_duration",
+    "peak_service_dur",
+    "abnormal_driving_cnt",
+    "temp_change_1d",
     "server_dur_hour",
+    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
     "order_cnt_21_09_7d_rate",
+    "r_deep_night_peak",
     "sleep_deprivation_days",
     "past_7_day_non_listening_period",
     "riskTierRank",
@@ -96,13 +117,26 @@ CHINESE_FIELD_MAP = {
     "年龄": "age",
     "连续出车天数": "consecutive_days",
     "近90天最高连日出车天数": "consecutive_days_max",
+    "连续多天服务超过6小时的最大天数": "consecutive_days_max_6h",
+    "连续6小时高强度天数": "consecutive_days_max_6h",
+    "最短睡眠时长": "min_sleep_duration",
+    "最短睡眠时长（小时）": "min_sleep_duration",
+    "高峰期服务时长": "peak_service_dur",
+    "高峰期服务时长（小时）": "peak_service_dur",
+    "异常驾驶次数": "abnormal_driving_cnt",
+    "近1天气温变化幅度": "temp_change_1d",
+    "近1天气温变化幅度（度）": "temp_change_1d",
     "当日在线时长（小时）": "online_dur_hour",
     "当日服务时长（小时）": "server_dur_hour",
     "近7日非预约单在线时长（小时）": "lately_7d_except_sub_online_dur_hour",
     "近30天在线时长（小时）": "lately_30d_online_dur_hour",
     "近30天在非预约单线时长（小时）": "server_dur_hour_30d",
     "近30日服务时长（小时）": "server_dur_sum_30d",
+    "近7天服务时长总和": "server_dur_sum_7d",
+    "近7天服务时长总和（小时）": "server_dur_sum_7d",
     "近7天21-9点完单量占比": "order_cnt_21_09_7d_rate",
+    "深夜高峰服务偏好/占比": "r_deep_night_peak",
+    "深夜高峰服务占比": "r_deep_night_peak",
     "近7天睡眠不足天数": "sleep_deprivation_days",
     "健康拍-高压": "systolic_blood_pressure",
     "测量-高压": "high_pressure",
@@ -248,7 +282,11 @@ def read_rows(source_path):
         raise SystemExit("仅支持 .xlsx、.xls、.csv、.json 输入文件。")
     if suffix not in {".json"}:
         rows = frame.fillna("").to_dict(orient="records")
-    # Map Chinese column names to English field names
+    return apply_field_mapping(rows)
+
+
+def apply_field_mapping(rows):
+    # Map Chinese column names to English field names for source and case reference files.
     if rows and any(k in CHINESE_FIELD_MAP for k in rows[0]):
         for row in rows:
             for cn, en in CHINESE_FIELD_MAP.items():
@@ -311,10 +349,10 @@ def read_reference_rows(path):
     elif suffix == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))
         rows = payload.get("drivers", payload) if isinstance(payload, dict) else payload
-        return rows if isinstance(rows, list) else []
+        return apply_field_mapping(rows) if isinstance(rows, list) else []
     else:
         return []
-    return frame.fillna("").to_dict(orient="records")
+    return apply_field_mapping(frame.fillna("").to_dict(orient="records"))
 
 
 def collect_reference_metrics(strategy_config):
@@ -393,6 +431,12 @@ def compare_numbers(driver_value, threshold_value, operator):
     return False
 
 
+def threshold_relation_label(operator):
+    if operator in {"<", "<="}:
+        return "低于"
+    return "高于"
+
+
 def replace_template(template, context):
     text = template
     for key, value in context.items():
@@ -437,11 +481,12 @@ def evaluate_leaf_condition(row, condition, reference_stats):
     elif threshold_value is None:
         reason = threshold_missing_reason(threshold, reference_stats)
     unit = condition.get("unit", "")
+    relation_label = threshold_relation_label(threshold_operator)
     return {
         "matched": matched,
         "evidence": (
             f"{label}{format_number(driver_value)}{unit}，"
-            f"高于case均值{format_number(threshold_value)}{unit}"
+            f"{relation_label}case均值{format_number(threshold_value)}{unit}"
         ),
         "debug": {
             "policy": threshold.get("policy"),
@@ -453,6 +498,7 @@ def evaluate_leaf_condition(row, condition, reference_stats):
             "driverValue": driver_value,
             "thresholdValue": threshold_value,
             "thresholdLabel": "case均值" if threshold.get("policy") == "case_mean" else "",
+            "thresholdRelationLabel": relation_label,
             "sampleCount": reference_stats.get(threshold.get("reference_metric"), {}).get("sample_count"),
             "unit": unit,
             "reason": reason,
@@ -492,6 +538,7 @@ def render_rule_strategy(row, rule, result):
         context = {
             "driver_value": format_number(driver_value),
             "threshold_value": format_number(threshold_value),
+            "threshold_relation": threshold_relation_label(threshold.get("operator", ">")),
             "unit": rule.get("unit", ""),
             "driver_metric_label": rule.get("driver_metric_label", rule.get("driver_metric", "")),
             "reference_metric_label": threshold.get("reference_metric", ""),
@@ -503,6 +550,8 @@ def render_rule_strategy(row, rule, result):
         "title": rule["title"],
         "category": rule.get("category", ""),
         "priority": rule.get("priority", 999),
+        "priority_tier": rule.get("priority_tier", ""),
+        "badges": rule.get("badges", []),
         "evidence": replace_template(rule.get("evidence_template", ""), context),
         "advice": replace_template(rule.get("advice_template", ""), context),
         "tags": rule.get("tags", []),
@@ -530,7 +579,7 @@ def strategies_for(row, strategy_config, reference_stats):
             {
                 "key": fallback.get("key", "regular-care"),
                 "title": fallback.get("title", "常规关怀"),
-                "evidence": fallback.get("evidence", "当前未命中明显风险策略。"),
+                "evidence": fallback.get("evidence", "当前没有策略指标超过配置阈值。"),
                 "advice": fallback.get("advice", "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。"),
                 "priority": fallback.get("priority", 999),
             }
@@ -600,6 +649,9 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
                     "source": threshold.get("source"),
                     "reference_metric": threshold.get("reference_metric"),
                     "operator": threshold.get("operator"),
+                    "priority": rule.get("priority"),
+                    "priority_tier": rule.get("priority_tier", ""),
+                    "badges": rule.get("badges", []),
                     "threshold_value": threshold_value_for(threshold, reference_stats),
                     "threshold_label": "case均值" if threshold.get("policy") == "case_mean" else "",
                     "sample_count": reference_stats.get(threshold.get("reference_metric"), {}).get("sample_count"),
@@ -617,6 +669,9 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
                     "source": item_threshold.get("source") if item_threshold else "manual_condition",
                     "reference_metric": item_threshold.get("reference_metric") if item_threshold else None,
                     "operator": item_threshold.get("operator") if item_threshold else item.get("operator"),
+                    "priority": rule.get("priority"),
+                    "priority_tier": rule.get("priority_tier", ""),
+                    "badges": rule.get("badges", []),
                     "threshold_value": threshold_value_for(item_threshold, reference_stats) if item_threshold else item.get("values"),
                     "threshold_label": "case均值" if item_threshold and item_threshold.get("policy") == "case_mean" else "",
                     "sample_count": reference_stats.get(item_threshold.get("reference_metric"), {}).get("sample_count") if item_threshold else None,

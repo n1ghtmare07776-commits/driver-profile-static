@@ -531,9 +531,55 @@ button:disabled {
 }
 
 .strategy-card h3 {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--accent);
   font-size: 15px;
+  line-height: 1.35;
+}
+
+.strategy-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 24px;
+  margin-bottom: 8px;
+}
+
+.strategy-badges {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 132px;
+}
+
+.strategy-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid #d6e1ec;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #f8fbff;
+  color: #456173;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.strategy-badge-high-risk {
+  border-color: #ffc8bf;
+  background: #fff1ef;
+  color: #b42318;
+}
+
+.strategy-badge-explainable {
+  border-color: #f3d38a;
+  background: #fff7d8;
+  color: #8a5b00;
 }
 
 .strategy-card p {
