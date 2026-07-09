@@ -166,7 +166,6 @@ assert.deepEqual(
     dataDate: driver.dataDate,
     riskTierRank: driver.riskTierRank,
     bestRiskTierRank: driver.bestRiskTierRank,
-    bestWindowRank: driver.bestWindowRank,
   })))),
   [
     {
@@ -174,23 +173,21 @@ assert.deepEqual(
       dataDate: "2026-07-08",
       riskTierRank: 8,
       bestRiskTierRank: 8,
-      bestWindowRank: 1,
     },
     {
       driverId: "100000000002",
       dataDate: "2026-07-07",
       riskTierRank: 50001,
       bestRiskTierRank: 50001,
-      bestWindowRank: 2,
     },
   ],
 );
 assert.equal(
-  sandbox.matchesAdvancedFilters({ bestWindowRank: 50000 }, { bestWindowRank_max: "50000" }),
+  sandbox.matchesAdvancedFilters({ bestRiskTierRank: 50000 }, { bestRiskTierRank_max: "50000" }),
   true,
 );
 assert.equal(
-  sandbox.matchesAdvancedFilters({ bestWindowRank: 50001 }, { bestWindowRank_max: "50000" }),
+  sandbox.matchesAdvancedFilters({ bestRiskTierRank: 50001 }, { bestRiskTierRank_max: "50000" }),
   false,
 );
 
@@ -217,6 +214,11 @@ const strategyIndex = sandbox.buildStrategyRuleIndex({
       threshold: { operator: ">" },
       evidence_template: "司机年龄{{driver_value}}岁，高于case均值{{threshold_value}}岁。",
       advice_template: "沟通时关注身体承受情况。",
+      translation: {
+        driver_script: "师傅您好，想关心一下您最近身体状态。",
+        action_advice: "建议中途适当休息。",
+        communication_tip: "不要做医学诊断。",
+      },
       tags: ["高龄"],
     },
     {
@@ -283,9 +285,12 @@ assert.equal(compactProfile.driverId, "100000000001");
 assert.equal(compactProfile.meta.dataDate, "2026-07-06");
 assert.equal(compactProfile.groups[0].items[0].displayValue, "北京市");
 assert.equal(compactProfile.groups[0].items[5].displayValue, "是");
+assert.equal(compactProfile.header.subtitle, "北京市 · 快车 · 示例公司A · 56岁");
 assert.equal(compactProfile.strategies[0].title, "高龄司机");
 assert.equal(compactProfile.strategies[0].evidence, "司机年龄56岁，高于case均值52.5岁。");
 assert.equal(compactProfile.strategies[0].badges[0].label, "可解释");
+assert.match(compactProfile.strategies[0].translation.driver_script, /身体状态/);
+assert.doesNotMatch(compactProfile.strategies[0].translation.copy_text, /case均值|死亡case|阈值/);
 assert.match(compactProfile.summary, /56岁，北京市，快车，示例公司A/);
 assert.match(compactProfile.summary, /重点关注：高龄司机。/);
 

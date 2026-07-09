@@ -81,7 +81,12 @@
       "tags": [
         "疲劳",
         "高强度"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您最近连续高强度出车比较多，想先关心一下您这两天休息得怎么样，身体状态还好吗？",
+        "action_advice": "建议您把固定休息时间提前排进出车计划，连续服务时间较长后尽量安排间歇休息。",
+        "communication_tip": "优先沟通，先确认当前状态；不要提 case 均值或内部阈值。"
+      }
     },
     {
       "key": "minimum-sleep-low",
@@ -144,7 +149,12 @@
       "tags": [
         "疲劳",
         "睡眠"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想关心一下您最近睡眠情况。平台侧看到您近期可能存在休息不足的情况，您现在精神状态还好吗？",
+        "action_advice": "建议疲劳明显时先减少接单或暂停出车，优先保证一段连续、稳定的睡眠。",
+        "communication_tip": "高风险且容易解释，先问状态，再给休息建议。"
+      }
     },
     {
       "key": "peak-service-duration-high",
@@ -216,7 +226,12 @@
       "tags": [
         "疲劳",
         "高强度"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您近期在高峰时段服务时间比较长，想确认一下您现在身体和精神状态是否还稳。",
+        "action_advice": "建议高峰结束后安排短休，避免连续长时间满负荷驾驶。",
+        "communication_tip": "优先沟通，强调“高峰后短休”，不要说内部阈值。"
+      }
     },
     {
       "key": "abnormal-driving-high",
@@ -268,7 +283,12 @@
       "tags": [
         "驾驶行为",
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想和您确认一下近期驾驶状态。若最近感觉疲劳、注意力下降或身体不舒服，建议先休息一下再继续出车。",
+        "action_advice": "建议先确认司机是否有疲劳或不适，再提醒其不要带着明显状态问题继续驾驶。",
+        "communication_tip": "语气保持关怀，不做事故原因判断，不说“异常驾驶导致风险”。"
+      }
     },
     {
       "key": "temperature-change-high",
@@ -301,7 +321,12 @@
       "tags": [
         "天气",
         "健康"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，最近天气变化比较明显，想提醒您出车时注意补水、保暖或降温，身体不舒服时先休息。",
+        "action_advice": "建议结合当地天气提醒司机做好防护，必要时降低出车强度。",
+        "communication_tip": "适合做补充说明，不要说死亡 case 或内部均值。"
+      }
     },
     {
       "key": "fatigue-score-high",
@@ -372,7 +397,12 @@
       "advice_template": "建议结合近期服务强度做关怀确认，提醒司机感觉疲劳时及时减少接单、安排休息，不要把评分指标解读为医学结论。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想关心一下您最近整体劳累程度。如果已经感觉困倦或注意力不集中，建议先休息再继续接单。",
+        "action_advice": "建议结合服务强度提醒司机减少连续接单，优先安排休息。",
+        "communication_tip": "重点提醒，但不要把评分说成医学判断或事故预测。"
+      }
     },
     {
       "key": "sleep-risk",
@@ -401,7 +431,12 @@
       "tags": [
         "疲劳",
         "睡眠"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想了解一下您最近作息是否规律。休息不足时建议先保证睡眠，再安排出车。",
+        "action_advice": "建议客服先询问休息情况，再提醒司机保持规律作息。",
+        "communication_tip": "适合作为睡眠类补充说明。"
+      }
     },
     {
       "key": "service-duration-7d-high",
@@ -468,7 +503,12 @@
       "advice_template": "建议关注司机近7天服务负荷是否持续偏高，沟通时提醒把短休和整休穿插进出车计划，避免连续累积疲劳。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您近一段时间服务负荷比较高，想提醒您注意穿插休息，别让疲劳持续累积。",
+        "action_advice": "建议把短休和整休穿插进出车计划，避免多日连续高负荷。",
+        "communication_tip": "重点提醒，但语气保持关怀；不要报内部统计口径。"
+      }
     },
     {
       "key": "service-duration-high",
@@ -528,7 +568,12 @@
       "advice_template": "建议关注司机服务时长是否连续偏高，沟通时提醒把休息排进出车计划，完成较长服务时长后安排间歇休息，避免长期满负荷运行。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您最近服务时长偏长，想关心一下您目前是否感到疲劳。长时间服务后建议及时休息一下。",
+        "action_advice": "建议完成较长服务后安排间歇休息，避免长期满负荷运行。",
+        "communication_tip": "高风险且可解释，放在前面，先确认状态。"
+      }
     },
     {
       "key": "consecutive-work",
@@ -590,7 +635,12 @@
       "advice_template": "重点提醒司机安排间歇休息，不要长期无休连续跑车；可以建议设置固定休息日，避免疲劳累积影响身体和驾驶安全。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您近期连续出车比较多，想提醒您合理安排休息，尽量不要长期无休连续跑车。",
+        "action_advice": "建议设置固定休息日，连续出车后安排恢复时间。",
+        "communication_tip": "高风险且可解释，适合直接提醒“连续出车后要休息”。"
+      }
     },
     {
       "key": "night-work",
@@ -637,7 +687,12 @@
       "advice_template": "沟通时先确认是否长期夜间出车，再引导尽量固定休息时间；如果收入允许，可建议减少连续夜间出车，优先保证睡眠。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您夜间出车比较多，想确认一下您白天是否能休息好。夜间跑车后建议尽量保证固定睡眠时间。",
+        "action_advice": "建议收入允许时减少连续夜间出车，保持相对固定的休息节奏。",
+        "communication_tip": "可解释性强，适合作为补充说明，避免评价司机选择。"
+      }
     },
     {
       "key": "deep-night-peak",
@@ -695,7 +750,12 @@
       "advice_template": "建议沟通时确认司机是否长期深夜出车，引导尽量固定休息时间；收入允许时，可建议减少连续深夜出车。",
       "tags": [
         "疲劳"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，看到您深夜时段出车较多，想提醒您注意休息节奏。如果已经明显疲劳，建议先暂停接单。",
+        "action_advice": "建议减少连续深夜出车，深夜服务后安排足够恢复时间。",
+        "communication_tip": "可解释性强，重点讲作息和恢复，不讲内部占比阈值。"
+      }
     },
     {
       "key": "senior-driver",
@@ -723,7 +783,12 @@
       "advice_template": "沟通时关注身体承受情况，提醒避免久坐和过长时间连续驾驶；可以建议中途下车活动，身体不舒服时及时休息。",
       "tags": [
         "高龄"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想关心一下您最近身体状态。出车时间较长时，建议中途下车活动一下，身体不舒服时先休息。",
+        "action_advice": "建议提醒避免久坐和过长时间连续驾驶，身体不适时及时休息或就医。",
+        "communication_tip": "只做关怀提醒，不做年龄歧视表达，不做医学诊断。"
+      }
     },
     {
       "key": "body-risk-attention",
@@ -834,7 +899,12 @@
       "advice_template": "建议用关怀口径确认司机近期身体感受，提醒身体不适时先休息并按需就医；页面仅提供关怀线索，不做医学诊断。",
       "tags": [
         "健康"
-      ]
+      ],
+      "translation": {
+        "driver_script": "师傅您好，想关心一下您近期身体感受。如果有头晕、胸闷或明显不舒服，建议先休息，并按需要咨询医生。",
+        "action_advice": "建议用关怀口径确认身体状态，提醒不适时不要勉强出车。",
+        "communication_tip": "健康类话术必须委婉，不诊断，不说平台判断您有疾病。"
+      }
     }
   ],
   "fallbackRule": {
@@ -842,6 +912,24 @@
     "title": "常规关怀",
     "evidence": "当前没有策略指标超过配置阈值。",
     "advice": "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
-    "priority": 999
+    "priority": 999,
+    "translation": {
+      "driver_script": "师傅您好，例行关心一下您最近的出车和休息情况。请注意合理安排作息，感觉疲劳或身体不舒服时先休息。",
+      "action_advice": "可做常规状态确认，提醒保持安全驾驶、合理休息和规律作息。",
+      "communication_tip": "常规关怀即可，不需要强调风险。"
+    }
+  },
+  "translationDefaults": {
+    "version": "v1",
+    "public_only": true,
+    "forbidden_terms": [
+      "case均值",
+      "死亡case",
+      "阈值",
+      "内部均值",
+      "事故因果"
+    ],
+    "internal_reference_default_open": false,
+    "copy_scope": "driver_script_and_action_advice"
   }
 }

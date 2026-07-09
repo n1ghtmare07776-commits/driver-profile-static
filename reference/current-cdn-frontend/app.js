@@ -41,7 +41,7 @@ const tokenPickers = [];
 const listPageSize = 50;
 
 const advancedFilterFields = [
-  "bestWindowRank",
+  "bestRiskTierRank",
   "age",
   "consecutive_days",
   "server_dur_hour",
@@ -94,8 +94,8 @@ function showState(message) {
       </div>
       <div class="tip-card">
         <div class="tip-icon">排</div>
-        <h4>按站内排名</h4>
-        <p>查看近七天窗口内优先顺序</p>
+        <h4>按排名筛选</h4>
+        <p>参考近七天最高模型排名</p>
       </div>
     </div>`;
   stateBox.classList.add("empty-state");
@@ -504,21 +504,7 @@ function deduplicateBestRankedDrivers(rows) {
       });
     }
   });
-  return Array.from(bestByDriver.values())
-    .sort((left, right) => {
-      const rankDiff = rankNumber(left.bestRiskTierRank || left.riskTierRank) -
-        rankNumber(right.bestRiskTierRank || right.riskTierRank);
-      if (rankDiff !== 0) {
-        return rankDiff;
-      }
-      return String(left.driverId || "").localeCompare(String(right.driverId || ""), "zh-Hans-CN", {
-        numeric: true,
-      });
-    })
-    .map((driver, index) => ({
-      ...driver,
-      bestWindowRank: index + 1,
-    }));
+  return Array.from(bestByDriver.values());
 }
 
 async function ensureDriversForFilters(filters) {
@@ -934,7 +920,8 @@ function filteredDrivers(filters = currentFilters(), limit = Infinity) {
   return allDrivers
     .filter((driver) => matchesFilters(driver, filters))
     .sort((left, right) => {
-      return rankNumber(left.bestWindowRank) - rankNumber(right.bestWindowRank);
+      return rankNumber(left.bestRiskTierRank || left.riskTierRank) -
+        rankNumber(right.bestRiskTierRank || right.riskTierRank);
     })
     .slice(0, limit);
 }
@@ -964,9 +951,9 @@ function appendDriverCards(drivers) {
       </div>
       <div class="driver-metrics">
         <div class="metric-row">
-          <span class="badge badge-num">站内 ${escapeHtml(displayValue(driver.bestWindowRank))}</span>
+          <span class="badge badge-num">排名 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))}</span>
         </div>
-        <div class="metric-label">原始模型 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))}</div>
+        <div class="metric-label">风险 ${escapeHtml(displayValue(driver.riskTierScore))} · 疲劳 ${escapeHtml(displayValue(driver.tiredScore))}</div>
       </div>`;
     item.addEventListener("click", () => loadProfile(driver));
     listEl.appendChild(item);
@@ -976,6 +963,24 @@ function appendDriverCards(drivers) {
 function driverInitial(driverId) {
   const text = String(driverId || "").trim();
   return text ? text.slice(-2) : "司";
+}
+
+function profileAvatarLabel() {
+  return "司";
+}
+
+function conciseProfileSubtitle(driver) {
+  return [
+    displayValue(driver.city),
+    displayValue(driver.product),
+    displayValue(driver.company),
+    driver.age !== undefined && driver.age !== null && driver.age !== "" ? `${displayValue(driver.age)}岁` : "",
+    driver.server_dur_hour !== undefined && driver.server_dur_hour !== null && driver.server_dur_hour !== ""
+      ? `服务时长 ${displayValue(driver.server_dur_hour)}h/日`
+      : "",
+  ]
+    .filter((value) => value && value !== "暂无数据")
+    .join(" · ");
 }
 
 function renderList(drivers, options = {}) {
@@ -989,7 +994,7 @@ function renderList(drivers, options = {}) {
   if (!drivers.length) {
     const empty = document.createElement("div");
     empty.className = "empty-list";
-    empty.textContent = "输入司机ID，或选择城市、公司、产品线、站内排名范围后显示匹配结果。";
+    empty.textContent = "输入司机ID，或选择城市、公司、产品线、排名范围后显示匹配结果。";
     listEl.appendChild(empty);
     return;
   }
@@ -1081,6 +1086,11 @@ function buildStrategyRuleIndex(config = {}) {
     title: "常规关怀",
     evidence: "当前没有策略指标超过配置阈值，或策略计算结果暂不可用。",
     advice: "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
+    translation: {
+      driver_script: "师傅您好，例行关心一下您最近的出车和休息情况。请注意合理安排作息，感觉疲劳或身体不舒服时先休息。",
+      action_advice: "可做常规状态确认，提醒保持安全驾驶、合理休息和规律作息。",
+      communication_tip: "常规关怀即可，不需要强调风险。",
+    },
     priority: 999,
   };
   return { rules, fallback };
@@ -1090,6 +1100,29 @@ function replaceTemplate(template = "", context = {}) {
   return String(template).replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) =>
     context[key] === undefined || context[key] === null ? "" : String(context[key]),
   );
+}
+
+function resolveTranslation(rawTranslation = {}, context = {}, fallbackAdvice = "") {
+  const translation = rawTranslation && typeof rawTranslation === "object" ? rawTranslation : {};
+  const driverScript = replaceTemplate(
+    translation.driver_script ||
+      "师傅您好，想关心一下您最近的出车和休息情况。若感觉疲劳或身体不适，建议先休息再继续出车。",
+    context,
+  );
+  const actionAdvice = replaceTemplate(
+    translation.action_advice || fallbackAdvice || "建议用关怀口径确认状态，并提醒合理安排休息。",
+    context,
+  );
+  const communicationTip = replaceTemplate(
+    translation.communication_tip || "保持关怀表达，不提内部指标。",
+    context,
+  );
+  return {
+    driver_script: driverScript,
+    action_advice: actionAdvice,
+    communication_tip: communicationTip,
+    copy_text: [driverScript, actionAdvice].filter(Boolean).join("\n"),
+  };
 }
 
 function strategyConditions(rule = {}) {
@@ -1168,6 +1201,7 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
       title: fallback.title || "常规关怀",
       evidence: fallback.evidence || "当前没有策略指标超过配置阈值。",
       advice: fallback.advice || "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
+      translation: resolveTranslation(fallback.translation, {}, fallback.advice),
       priority: fallback.priority || 999,
       priority_tier: fallback.priority_tier || "",
       badges: Array.isArray(fallback.badges) ? fallback.badges : [],
@@ -1210,6 +1244,11 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
     badges: Array.isArray(rule.badges) ? rule.badges : [],
     evidence: replaceTemplate(rule.evidence_template || "{{matched_evidence}}。", context),
     advice: replaceTemplate(rule.advice_template || "可做常规状态确认，保持关怀式沟通。", context),
+    translation: resolveTranslation(
+      rule.translation,
+      context,
+      replaceTemplate(rule.advice_template || "可做常规状态确认，保持关怀式沟通。", context),
+    ),
     tags: Array.isArray(rule.tags) ? rule.tags : [],
   };
 }
@@ -1281,6 +1320,7 @@ function renderStrategies(strategies = []) {
           title: "常规关怀",
           evidence: "当前没有策略指标超过配置阈值，或策略计算结果暂不可用。",
           advice: "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
+          translation: resolveTranslation(),
         },
       ];
   const renderBadges = (badges = []) => {
@@ -1295,6 +1335,25 @@ function renderStrategies(strategies = []) {
       )
       .join("")}</div>`;
   };
+  const renderTranslation = (strategy) => {
+    const translation = resolveTranslation(strategy.translation, {}, strategy.advice);
+    return `
+      <div class="strategy-translation">
+        <div class="speech-block speech-primary">
+          <span>对外话术</span>
+          <p>${escapeHtml(translation.driver_script)}</p>
+        </div>
+        <div class="speech-block">
+          <span>可操作建议</span>
+          <p>${escapeHtml(translation.action_advice)}</p>
+        </div>
+        <div class="communication-note">
+          <span>沟通提醒</span>
+          <p>${escapeHtml(translation.communication_tip)}</p>
+        </div>
+        <button class="strategy-copy" type="button" data-copy-strategy="true" data-copy-text="${escapeHtml(translation.copy_text)}">复制话术</button>
+      </div>`;
+  };
   return `<section class="strategy-list">${items
     .map(
       (strategy) => `
@@ -1303,15 +1362,51 @@ function renderStrategies(strategies = []) {
             <h3>${escapeHtml(strategy.title || "常规关怀")}</h3>
             ${renderBadges(strategy.badges)}
           </div>
-          <dl>
-            <dt>依据</dt>
-            <dd>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</dd>
-            <dt>建议</dt>
-            <dd>${escapeHtml(strategy.advice || "可做常规状态确认，保持关怀式沟通。")}</dd>
-          </dl>
+          ${renderTranslation(strategy)}
+          <details class="strategy-reference">
+            <summary>客服参考依据</summary>
+            <dl>
+              <dt>内部依据</dt>
+              <dd>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</dd>
+              <dt>内部建议</dt>
+              <dd>${escapeHtml(strategy.advice || "可做常规状态确认，保持关怀式沟通。")}</dd>
+            </dl>
+          </details>
         </article>`,
     )
     .join("")}</section>`;
+}
+
+async function copyStrategySpeech(button) {
+  const text = button?.dataset?.copyText || "";
+  if (!text) {
+    return;
+  }
+  const originalText = button.textContent;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.left = "-9999px";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    button.textContent = "已复制";
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 1400);
+  } catch (error) {
+    button.textContent = "复制失败";
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 1400);
+  }
 }
 
 function field(label, value) {
@@ -1353,7 +1448,6 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
       dataDate: driver.dataDate || "暂无数据",
       riskTierRank: displayValue(driver.riskTierRank),
       bestRiskTierRank: displayValue(driver.bestRiskTierRank || driver.riskTierRank),
-      bestWindowRank: displayValue(driver.bestWindowRank),
       riskTierScore: displayValue(driver.riskTierScore),
       tiredScore: displayValue(driver.tiredScore),
     },
@@ -1363,6 +1457,7 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
     },
     header: {
       title: "司机画像",
+      subtitle: conciseProfileSubtitle(driver),
       chips: headerChipsForDriver(driver, strategies),
     },
     strategies,
@@ -1377,8 +1472,7 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
           field("产品线 product_level2_name", driver.product),
           field("年龄 age", driver.age),
           field("是否组织化 is_organized", normalizeBooleanLabel(driver.isOrganized)),
-          field("站内近七天排名 bestWindowRank", driver.bestWindowRank),
-          field("原始模型排名 risk_tier_rank", driver.bestRiskTierRank || driver.riskTierRank),
+          field("近七天最高排名 risk_tier_rank", driver.bestRiskTierRank || driver.riskTierRank),
         ],
       },
       {
@@ -1442,7 +1536,7 @@ function renderSourceMeta(profile) {
   return `
     <section class="source-meta" aria-label="数据来源">
       <span>原始模型排名命中日期：${escapeHtml(dataDate)}</span>
-      <span>原始模型排名：${escapeHtml(meta.bestRiskTierRank || meta.riskTierRank || "暂无数据")}</span>
+      <span>近七天最高排名：${escapeHtml(meta.bestRiskTierRank || meta.riskTierRank || "暂无数据")}</span>
       <span>同步状态：${escapeHtml(syncStatus)}</span>
       <span>快照生成：${escapeHtml(generatedAt)}</span>
     </section>`;
@@ -1454,16 +1548,16 @@ function renderProfile(profile) {
       <div class="profile-top profile-title">
         <div>
           <div class="profile-id-row">
-            <div class="profile-avatar">${escapeHtml(driverInitial(profile.driverId))}</div>
+            <div class="profile-avatar">${escapeHtml(profileAvatarLabel())}</div>
             <div>
               <p class="profile-kicker">${escapeHtml(profile.header.title)} · ${escapeHtml(profile.meta.dataDate || profile.source?.dataDate || "暂无日期")} 快照</p>
               <h2 class="profile-id">司机ID ${escapeHtml(profile.driverId)}</h2>
-              <p class="profile-sub">${escapeHtml(profile.summary || "")}</p>
+              <p class="profile-sub">${escapeHtml(profile.header.subtitle || "")}</p>
             </div>
           </div>
           ${renderHeaderChips(profile.header.chips)}
         </div>
-        <div class="risk-box"><span class="label">站内近七天排名</span><b class="value">${escapeHtml(profile.meta.bestWindowRank || "暂无数据")}</b></div>
+        <div class="risk-box risk-score-box"><span class="label">综合风险</span><b class="value">${escapeHtml(profile.meta.riskTierScore || "暂无数据")}</b></div>
       </div>
       ${renderSourceMeta(profile)}
     </header>
@@ -1563,7 +1657,7 @@ async function downloadCurrentFilter() {
   }
   const filters = currentFilters();
   if (!hasAnyFilter(filters)) {
-    showState("请先输入司机ID，或选择城市、公司、产品线、站内排名范围后再下载筛选名单。");
+    showState("请先输入司机ID，或选择城市、公司、产品线、排名范围后再下载筛选名单。");
     renderList([]);
     return;
   }
@@ -1590,7 +1684,7 @@ searchButton.addEventListener("click", async () => {
   }
   const filters = currentFilters();
   if (!hasAnyFilter(filters)) {
-    showState("请先输入司机ID，或选择城市、公司、产品线、站内排名范围。");
+    showState("请先输入司机ID，或选择城市、公司、产品线、排名范围。");
     renderList([]);
     return;
   }
@@ -1607,6 +1701,13 @@ searchButton.addEventListener("click", async () => {
 driverIdInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     searchButton.click();
+  }
+});
+
+profileEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-copy-strategy]");
+  if (button && profileEl.contains(button)) {
+    copyStrategySpeech(button);
   }
 });
 
