@@ -1557,7 +1557,7 @@ function renderProfile(profile) {
           </div>
           ${renderHeaderChips(profile.header.chips)}
         </div>
-        <div class="risk-box risk-score-box"><span class="label">综合风险</span><b class="value">${escapeHtml(profile.meta.riskTierScore || "暂无数据")}</b></div>
+        <div class="risk-box"><span class="label">近七天最高排名</span><b class="value">${escapeHtml(profile.meta.bestRiskTierRank || profile.meta.riskTierRank || "暂无数据")}</b></div>
       </div>
       ${renderSourceMeta(profile)}
     </header>
