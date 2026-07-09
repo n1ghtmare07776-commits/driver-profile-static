@@ -9,11 +9,22 @@
   <body>
     <main class="app-shell">
       <aside class="sidebar">
-        <header>
-          <h1>司机画像</h1>
-          <div class="snapshot-meta">
-            <p id="metaText">读取静态快照中...</p>
-            <p id="windowText"></p>
+        <header class="brand-header">
+          <div class="brand-row">
+            <div class="brand-logo" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2 4 7v6c0 4 3 7.5 8 9 5-1.5 8-5 8-9V7l-8-5Z" fill="#fff" opacity="0.25" />
+                <path d="m9 13 3-3 3 3m-3-3v6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <div class="brand-titles">
+              <h1 class="brand-title">司机画像</h1>
+              <p class="brand-subtitle">DRIVER PROFILE</p>
+            </div>
+          </div>
+          <div class="snapshot-meta brand-meta">
+            <p id="metaText" class="meta-chip neutral">读取静态快照中...</p>
+            <p id="windowText" class="meta-chip"></p>
           </div>
           <div id="loadProgress" class="load-progress" aria-label="静态数据加载进度">
             <div class="load-progress-bar">
