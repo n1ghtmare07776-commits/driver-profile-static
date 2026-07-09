@@ -782,19 +782,27 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
 
 
 def summary_for(row):
-    age = display(get(row, "age"))
-    city = display(get(row, "resident_city_name", "city"))
-    product = display(get(row, "product_level2_name", "product"))
-    company = display(get(row, "company_name", "company"))
-    days = display(get(row, "consecutive_days"))
-    service = display(get(row, "server_dur_hour"))
-    night = display(get(row, "order_cnt_21_09_7d_rate"))
-    sleep = display(get(row, "sleep_deprivation_days"))
-    dt = display(get(row, "dt", "dataDate"))
-    return (
-        f"{age}岁，{city}，{product}，{company}，连续出车{days}天，"
-        f"当日服务{service}小时，夜间出车占比{night}，睡眠不足{sleep}天，数据日期{dt}。"
-    )
+    def visible(value):
+        text = display(value)
+        return "" if text == "暂无数据" else text
+
+    def phrase(value, prefix="", suffix=""):
+        text = visible(value)
+        return f"{prefix}{text}{suffix}" if text else ""
+
+    parts = [
+        phrase(get(row, "age"), suffix="岁"),
+        visible(get(row, "resident_city_name", "city")),
+        visible(get(row, "product_level2_name", "product")),
+        visible(get(row, "company_name", "company")),
+        phrase(get(row, "consecutive_days"), prefix="连续出车", suffix="天"),
+        phrase(get(row, "server_dur_hour"), prefix="当日服务", suffix="小时"),
+        phrase(get(row, "order_cnt_21_09_7d_rate"), prefix="夜间出车占比"),
+        phrase(get(row, "sleep_deprivation_days"), prefix="睡眠不足", suffix="天"),
+        phrase(get(row, "dt", "dataDate"), prefix="数据日期"),
+    ]
+    text = "，".join(part for part in parts if part)
+    return f"{text}。" if text else "暂无可展示画像信息。"
 
 
 def header_chips(row, strategies=None):

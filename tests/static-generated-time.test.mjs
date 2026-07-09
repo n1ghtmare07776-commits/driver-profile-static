@@ -192,6 +192,32 @@ assert.equal(
 );
 
 assert.deepEqual(
+  [
+    { driverId: "100000000003", bestRiskTierRank: 100, tiredScore: 60, riskTierScore: 70 },
+    { driverId: "100000000001", bestRiskTierRank: 100, tiredScore: 88, riskTierScore: 60 },
+    { driverId: "100000000002", bestRiskTierRank: 100, tiredScore: "", riskTierScore: 99 },
+  ]
+    .sort(sandbox.compareFilteredDrivers)
+    .map((driver) => driver.driverId),
+  ["100000000001", "100000000003", "100000000002"],
+);
+
+const guardedSummary = sandbox.buildSummaryForDriver({
+  driverId: "100000000009",
+  age: undefined,
+  city: "undefined",
+  product: "快车",
+  company: null,
+  consecutive_days: Number.NaN,
+  server_dur_hour: 0,
+  order_cnt_21_09_7d_rate: "",
+  sleep_deprivation_days: "NaN",
+  dataDate: "2026-07-09",
+}, [{ key: "regular-care", title: "常规关怀" }]);
+assert.equal(guardedSummary, "快车，当日服务0小时，数据日期2026-07-09。");
+assert.doesNotMatch(guardedSummary, /暂无数据岁|NaN|undefined|null/);
+
+assert.deepEqual(
   sandbox.resolveStaticProfile({
     driverId: "100000000001",
     profile: { driverId: "100000000001", summary: "完整静态档案" },

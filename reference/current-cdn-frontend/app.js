@@ -157,6 +157,16 @@ function displayValue(value) {
     : "暂无数据";
 }
 
+function displayableText(value) {
+  const text = displayValue(value);
+  return text === "暂无数据" ? "" : text;
+}
+
+function summaryPhrase(value, { prefix = "", suffix = "" } = {}) {
+  const text = displayableText(value);
+  return text ? `${prefix}${text}${suffix}` : "";
+}
+
 function formatMetricValue(value) {
   if (value === undefined || value === null || value === "") {
     return "暂无数据";
@@ -482,6 +492,35 @@ function appendDriverRows(target, rows) {
 function rankNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : Infinity;
+}
+
+function scoreNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
+function compareFilteredDrivers(left, right) {
+  const rankDiff =
+    rankNumber(left.bestRiskTierRank || left.riskTierRank) -
+    rankNumber(right.bestRiskTierRank || right.riskTierRank);
+  if (rankDiff !== 0) {
+    return rankDiff;
+  }
+  const tiredScoreDiff = scoreNumber(right.tiredScore) - scoreNumber(left.tiredScore);
+  if (tiredScoreDiff !== 0) {
+    return tiredScoreDiff;
+  }
+  const riskScoreDiff = scoreNumber(right.riskTierScore) - scoreNumber(left.riskTierScore);
+  if (riskScoreDiff !== 0) {
+    return riskScoreDiff;
+  }
+  const dateDiff = normalizedDate(right.dataDate).localeCompare(normalizedDate(left.dataDate));
+  if (dateDiff !== 0) {
+    return dateDiff;
+  }
+  return String(left.driverId || "").localeCompare(String(right.driverId || ""), "zh-Hans-CN", {
+    numeric: true,
+  });
 }
 
 function deduplicateBestRankedDrivers(rows) {
@@ -919,10 +958,7 @@ function filteredDrivers(filters = currentFilters(), limit = Infinity) {
   }
   return allDrivers
     .filter((driver) => matchesFilters(driver, filters))
-    .sort((left, right) => {
-      return rankNumber(left.bestRiskTierRank || left.riskTierRank) -
-        rankNumber(right.bestRiskTierRank || right.riskTierRank);
-    })
+    .sort(compareFilteredDrivers)
     .slice(0, limit);
 }
 
@@ -971,15 +1007,13 @@ function profileAvatarLabel() {
 
 function conciseProfileSubtitle(driver) {
   return [
-    displayValue(driver.city),
-    displayValue(driver.product),
-    displayValue(driver.company),
-    driver.age !== undefined && driver.age !== null && driver.age !== "" ? `${displayValue(driver.age)}岁` : "",
-    driver.server_dur_hour !== undefined && driver.server_dur_hour !== null && driver.server_dur_hour !== ""
-      ? `服务时长 ${displayValue(driver.server_dur_hour)}h/日`
-      : "",
+    displayableText(driver.city),
+    displayableText(driver.product),
+    displayableText(driver.company),
+    summaryPhrase(driver.age, { suffix: "岁" }),
+    summaryPhrase(driver.server_dur_hour, { prefix: "服务时长 ", suffix: "h/日" }),
   ]
-    .filter((value) => value && value !== "暂无数据")
+    .filter(Boolean)
     .join(" · ");
 }
 
@@ -1294,22 +1328,23 @@ function resolveStrategiesForDriver(driver, ruleIndex = strategyRuleIndex) {
 
 function buildSummaryForDriver(driver, strategies = resolveStrategiesForDriver(driver)) {
   const base = [
-    `${displayValue(driver.age)}岁`,
-    displayValue(driver.city),
-    displayValue(driver.product),
-    displayValue(driver.company),
-    `连续出车${displayValue(driver.consecutive_days)}天`,
-    `当日服务${displayValue(driver.server_dur_hour)}小时`,
-    `夜间出车占比${displayValue(driver.order_cnt_21_09_7d_rate)}`,
-    `睡眠不足${displayValue(driver.sleep_deprivation_days)}天`,
-    `数据日期${displayValue(driver.dataDate)}`,
-  ].join("，");
+    summaryPhrase(driver.age, { suffix: "岁" }),
+    displayableText(driver.city),
+    displayableText(driver.product),
+    displayableText(driver.company),
+    summaryPhrase(driver.consecutive_days, { prefix: "连续出车", suffix: "天" }),
+    summaryPhrase(driver.server_dur_hour, { prefix: "当日服务", suffix: "小时" }),
+    summaryPhrase(driver.order_cnt_21_09_7d_rate, { prefix: "夜间出车占比" }),
+    summaryPhrase(driver.sleep_deprivation_days, { prefix: "睡眠不足", suffix: "天" }),
+    summaryPhrase(driver.dataDate, { prefix: "数据日期" }),
+  ].filter(Boolean);
   const titles = strategies
     .filter((strategy) => strategy.key !== "regular-care")
     .map((strategy) => strategy.title)
     .filter(Boolean)
     .slice(0, 6);
-  return `${base}。${titles.length ? ` 重点关注：${titles.join("、")}。` : ""}`;
+  const summary = base.length ? `${base.join("，")}。` : "暂无可展示画像信息。";
+  return `${summary}${titles.length ? ` 重点关注：${titles.join("、")}。` : ""}`;
 }
 
 function renderStrategies(strategies = []) {
