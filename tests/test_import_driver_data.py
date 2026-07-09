@@ -291,7 +291,7 @@ def test_import_driver_data_drops_oldest_daily_files_when_package_exceeds_limit(
             "--upload-date",
             "2026-07-07",
             "--size-limit-mb",
-            "0.04",
+            "0.06",
         ],
         cwd=ROOT,
         text=True,

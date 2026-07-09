@@ -1076,6 +1076,9 @@ function evidenceTextForItems(rule, evidenceItems) {
       const label = condition.driver_metric_label || item.driverMetric || "指标";
       const unit = condition.unit || "";
       const operator = condition.threshold?.operator || rule.threshold?.operator || ">";
+      if (item.thresholdValue === undefined || item.thresholdValue === null) {
+        return `${label}${formatMetricValue(item.driverValue)}${unit}`;
+      }
       const relation = thresholdRelationLabel(operator);
       return `${label}${formatMetricValue(item.driverValue)}${unit}，${relation}case均值${formatMetricValue(item.thresholdValue)}${unit}`;
     })
@@ -1301,8 +1304,13 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
         title: "出车/服务指标",
         items: [
           field("连续出车天数 consecutive_days", driver.consecutive_days),
+          field("最高连日出车天数 consecutive_days_max", driver.consecutive_days_max),
+          field("当日在线时长 online_dur_hour", driver.online_dur_hour),
           field("当日服务时长 server_dur_hour", driver.server_dur_hour),
+          field("近7日非预约单在线时长 lately_7d_except_sub_online_dur_hour", driver.lately_7d_except_sub_online_dur_hour),
           field("近30天服务时长 server_dur_hour_30d", driver.server_dur_hour_30d || driver.server_dur_sum_30d),
+          field("近30天在线时长 lately_30d_online_dur_hour", driver.lately_30d_online_dur_hour),
+          field("是否长期连日出车 is_long_consecutive", driver.is_long_consecutive),
         ],
       },
       {
@@ -1310,9 +1318,32 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
         title: "疲劳相关",
         items: [
           field("夜间出车占比 order_cnt_21_09_7d_rate", driver.order_cnt_21_09_7d_rate),
+          field("是否常规夜班司机 is_regular_night", driver.is_regular_night),
           field("睡眠不足天数 sleep_deprivation_days", driver.sleep_deprivation_days),
+          field("是否睡眠不足 is_sleep_deprived", driver.is_sleep_deprived),
+          field("是否突然累 is_sudden_fatigue", driver.is_sudden_fatigue),
           field("近7天非听单时段 past_7_day_non_listening_period", driver.past_7_day_non_listening_period),
           field("疲劳分 tired_score", driver.tiredScore),
+          field("近7天最高劳累指数 fatigue_index_7d", driver.fatigue_index_7d),
+          field("最大疲劳风险分 max_improved_tired_risk_score", driver.max_improved_tired_risk_score),
+        ],
+      },
+      {
+        key: "health",
+        title: "健康相关",
+        items: [
+          field("测量高压 high_pressure", driver.high_pressure),
+          field("测量低压 diastolic_bp_measure", driver.diastolic_bp_measure || driver.low_pressure),
+          field("健康拍高压 systolic_bp_health", driver.systolic_bp_health),
+          field("身体基础系数 body_base_coeff", driver.body_base_coeff),
+          field("身体风险因子 body_risk_factor", driver.body_risk_factor),
+          field("血糖风险值 hyperglycemia_value", driver.hyperglycemia_value),
+          field("血脂风险值 hyperlipidemia_value", driver.hyperlipidemia_value),
+          field("整体血压风险 bp_risk_overall", driver.bp_risk_overall),
+          field("是否高血压 is_hypertension_flag", driver.is_hypertension_flag),
+          field("自评高血压 self_high_bp", driver.self_high_bp),
+          field("自评高血糖 self_high_blood_sugar", driver.self_high_blood_sugar),
+          field("自评高血脂 self_high_blood_lipid", driver.self_high_blood_lipid),
         ],
       },
     ],
