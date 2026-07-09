@@ -349,6 +349,34 @@ assert.deepEqual(
   ["minimum-sleep-low", "service-duration-7d-high", "senior-driver"],
 );
 
+const promotedStrategyHtml = sandbox.renderStrategies([
+  {
+    key: "service-duration-high",
+    title: "服务时长偏高",
+    priority: 30,
+    badges: [{ kind: "high-risk", label: "高风险" }],
+    translation: {
+      driver_script: "师傅您好，想关心一下您最近的服务节奏。",
+      action_advice: "建议合理安排休息。",
+      communication_tip: "先确认状态。",
+    },
+  },
+  {
+    key: "night-work",
+    title: "夜间出车较多",
+    priority: 80,
+    badges: [{ kind: "explainable", label: "可解释" }],
+    translation: {
+      driver_script: "师傅您好，想提醒您注意夜间休息。",
+      action_advice: "建议减少连续夜间出车。",
+      communication_tip: "语气保持关怀。",
+    },
+  },
+]);
+assert.match(promotedStrategyHtml, /strategy-priority-primary/);
+assert.match(promotedStrategyHtml, /优先沟通/);
+assert.doesNotMatch(promotedStrategyHtml.split("</article>")[0], /次要补充/);
+
 const fallbackStrategies = sandbox.resolveStrategiesForDriver(
   { strategyKeys: ["regular-care"] },
   strategyIndex,

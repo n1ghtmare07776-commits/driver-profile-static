@@ -574,6 +574,24 @@ function priorityMeta(priority) {
   return { kind: "reference", label: "参考信息" };
 }
 
+function priorityMetasForStrategies(strategies = []) {
+  const metas = strategies.map((strategy) => priorityMeta(strategy.priority));
+  if (metas.some((meta) => meta.kind === "primary")) {
+    return metas;
+  }
+  const promotedIndex = metas.findIndex((meta, index) => {
+    const strategy = strategies[index] || {};
+    return strategy.key !== "regular-care" && meta.kind === "secondary";
+  });
+  const fallbackIndex = promotedIndex >= 0
+    ? promotedIndex
+    : metas.findIndex((meta, index) => (strategies[index] || {}).key !== "regular-care");
+  if (fallbackIndex >= 0) {
+    metas[fallbackIndex] = { kind: "primary", label: "优先沟通" };
+  }
+  return metas;
+}
+
 function compareFilteredDrivers(left, right) {
   const rankDiff =
     rankNumber(left.bestRiskTierRank || left.riskTierRank) -
@@ -1634,9 +1652,10 @@ function renderStrategies(strategies = []) {
         <button class="strategy-copy" type="button" data-copy-strategy="true" data-copy-text="${escapeHtml(translation.copy_text)}">复制话术</button>
       </div>`;
   };
+  const priorityMetas = priorityMetasForStrategies(items);
   return `<section class="strategy-list">${items
-    .map((strategy) => {
-      const priority = priorityMeta(strategy.priority);
+    .map((strategy, index) => {
+      const priority = priorityMetas[index] || priorityMeta(strategy.priority);
       const badges = [
         { kind: `priority-${priority.kind}`, label: priority.label },
         ...(Array.isArray(strategy.badges) ? strategy.badges : []),
@@ -1649,7 +1668,7 @@ function renderStrategies(strategies = []) {
           </div>
           ${renderTranslation(strategy)}
           <details class="strategy-reference">
-            <summary>客服参考依据</summary>
+            <summary>参考依据</summary>
             <dl>
               <dt>内部依据</dt>
               <dd>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</dd>
