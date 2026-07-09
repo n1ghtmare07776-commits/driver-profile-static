@@ -1156,11 +1156,15 @@ function strategyRiskRank(strategy) {
 }
 
 function compareStrategies(left, right) {
+  const riskRankDiff = strategyRiskRank(left) - strategyRiskRank(right);
+  if (riskRankDiff !== 0) {
+    return riskRankDiff;
+  }
   const priorityDiff = (left.priority || 999) - (right.priority || 999);
   if (priorityDiff !== 0) {
     return priorityDiff;
   }
-  return strategyRiskRank(left) - strategyRiskRank(right);
+  return String(left.key || "").localeCompare(String(right.key || ""), "zh-Hans-CN");
 }
 
 function resolveStrategiesForDriver(driver, ruleIndex = strategyRuleIndex) {

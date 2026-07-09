@@ -627,6 +627,23 @@ def render_rule_strategy(row, rule, result):
     }
 
 
+def strategy_badge_rank(item):
+    badges = item.get("badges", [])
+    has_high_risk = any(badge.get("kind") == "high-risk" for badge in badges if isinstance(badge, dict))
+    has_explainable = any(badge.get("kind") == "explainable" for badge in badges if isinstance(badge, dict))
+    if has_high_risk and has_explainable:
+        return 0
+    if has_high_risk:
+        return 1
+    if has_explainable:
+        return 2
+    return 3
+
+
+def strategy_sort_key(item):
+    return (strategy_badge_rank(item), item.get("priority", 999), item.get("key", ""))
+
+
 def strategies_for(row, strategy_config, reference_stats):
     strategies = []
     for rule in strategy_config.get("rules", []):
@@ -653,7 +670,7 @@ def strategies_for(row, strategy_config, reference_stats):
                 "priority": fallback.get("priority", 999),
             }
         )
-    return sorted(strategies, key=lambda item: item.get("priority", 999))
+    return sorted(strategies, key=strategy_sort_key)
 
 
 def matched_evidence_values(result):
@@ -689,6 +706,7 @@ def strategy_hits_for(row, strategy_config, reference_stats):
                 {
                     "key": rule["key"],
                     "priority": rule.get("priority", 999),
+                    "badges": rule.get("badges", []),
                     "evidence": matched_evidence_values(result),
                 }
             )
@@ -698,10 +716,11 @@ def strategy_hits_for(row, strategy_config, reference_stats):
             {
                 "key": fallback.get("key", "regular-care"),
                 "priority": fallback.get("priority", 999),
+                "badges": fallback.get("badges", []),
                 "evidence": [],
             }
         )
-    return sorted(hits, key=lambda item: item.get("priority", 999))
+    return sorted(hits, key=strategy_sort_key)
 
 
 def strategy_threshold_summary(strategy_config, window_rows, reference_rows, reference_path, reference_stats):

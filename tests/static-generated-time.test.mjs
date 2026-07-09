@@ -234,6 +234,21 @@ const strategyIndex = sandbox.buildStrategyRuleIndex({
       advice_template: "提醒司机优先保证连续睡眠。",
       tags: ["疲劳"],
     },
+    {
+      key: "service-duration-7d-high",
+      title: "近7天服务时长偏高",
+      category: "workload",
+      priority: 1,
+      priority_tier: "P1",
+      badges: [{ kind: "high-risk", label: "高风险" }],
+      driver_metric: "server_dur_sum_7d",
+      driver_metric_label: "近7天服务时长总和",
+      unit: "小时",
+      threshold: { operator: ">" },
+      evidence_template: "{{matched_evidence}}。",
+      advice_template: "提醒司机安排休息。",
+      tags: ["疲劳"],
+    },
   ],
   fallbackRule: {
     key: "regular-care",
@@ -283,6 +298,22 @@ const lowSleepProfile = sandbox.resolveStaticProfile({
 assert.equal(lowSleepProfile.strategies[0].title, "最短睡眠时长偏低");
 assert.equal(lowSleepProfile.strategies[0].evidence, "最短睡眠时长3.5小时，低于case均值5.2小时。");
 assert.equal(lowSleepProfile.strategies[0].badges[0].label, "高风险");
+
+const sortedStrategies = sandbox.resolveStrategiesForDriver(
+  {
+    strategyKeys: ["senior-driver", "service-duration-7d-high", "minimum-sleep-low"],
+    strategyEvidence: {
+      "senior-driver": [["age", 56, 52.5]],
+      "service-duration-7d-high": [["server_dur_sum_7d", 80, 60]],
+      "minimum-sleep-low": [["min_sleep_duration", 3.5, 5.2]],
+    },
+  },
+  strategyIndex,
+);
+assert.deepEqual(
+  sortedStrategies.map((strategy) => strategy.key),
+  ["minimum-sleep-low", "service-duration-7d-high", "senior-driver"],
+);
 
 const fallbackStrategies = sandbox.resolveStrategiesForDriver(
   { strategyKeys: ["regular-care"] },
