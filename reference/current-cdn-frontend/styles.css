@@ -101,9 +101,8 @@ body {
   width: 36px;
   height: 36px;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 2px 6px rgba(24, 95, 165, 0.25);
 }
 
 .brand-logo svg {
