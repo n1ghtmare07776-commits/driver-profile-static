@@ -166,6 +166,7 @@ assert.deepEqual(
     dataDate: driver.dataDate,
     riskTierRank: driver.riskTierRank,
     bestRiskTierRank: driver.bestRiskTierRank,
+    bestWindowRank: driver.bestWindowRank,
   })))),
   [
     {
@@ -173,21 +174,23 @@ assert.deepEqual(
       dataDate: "2026-07-08",
       riskTierRank: 8,
       bestRiskTierRank: 8,
+      bestWindowRank: 1,
     },
     {
       driverId: "100000000002",
       dataDate: "2026-07-07",
       riskTierRank: 50001,
       bestRiskTierRank: 50001,
+      bestWindowRank: 2,
     },
   ],
 );
 assert.equal(
-  sandbox.matchesAdvancedFilters({ bestRiskTierRank: 50000 }, { bestRiskTierRank_max: "50000" }),
+  sandbox.matchesAdvancedFilters({ bestWindowRank: 50000 }, { bestWindowRank_max: "50000" }),
   true,
 );
 assert.equal(
-  sandbox.matchesAdvancedFilters({ bestRiskTierRank: 50001 }, { bestRiskTierRank_max: "50000" }),
+  sandbox.matchesAdvancedFilters({ bestWindowRank: 50001 }, { bestWindowRank_max: "50000" }),
   false,
 );
 

@@ -19,6 +19,7 @@ const searchButton = document.querySelector("#searchButton");
 const resetButton = document.querySelector("#resetButton");
 const exportButton = document.querySelector("#exportButton");
 const snapshotButton = document.querySelector("#snapshotButton");
+const advancedCount = document.querySelector("#advancedCount");
 const selectedCities = new Set();
 const selectedCompanies = new Set();
 const selectedProducts = new Set();
@@ -40,7 +41,7 @@ const tokenPickers = [];
 const listPageSize = 50;
 
 const advancedFilterFields = [
-  "bestRiskTierRank",
+  "bestWindowRank",
   "age",
   "consecutive_days",
   "server_dur_hour",
@@ -69,7 +70,35 @@ const pinyinCollator = new Intl.Collator("zh-CN-u-co-pinyin", {
 });
 
 function showState(message) {
-  stateBox.textContent = message;
+  stateBox.innerHTML = `
+    <div class="empty-illust" aria-hidden="true">
+      <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+        <circle cx="28" cy="20" r="9" stroke="currentColor" stroke-width="2.2" />
+        <path d="M10 46c0-10 8-14 18-14s18 4 18 14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        <circle cx="44" cy="14" r="6" fill="#e6f1fb" stroke="currentColor" stroke-width="1.8" />
+        <text x="44" y="18" font-size="9" font-weight="700" fill="currentColor" text-anchor="middle">?</text>
+      </svg>
+    </div>
+    <h2 class="empty-title">查询一位司机的画像</h2>
+    <p class="empty-desc">${escapeHtml(message || "在左侧输入司机 ID，或通过城市、公司、产品线组合筛选定位司机。")}</p>
+    <div class="empty-tips">
+      <div class="tip-card">
+        <div class="tip-icon">ID</div>
+        <h4>按 ID 精确查询</h4>
+        <p>输入完整司机 ID 直接定位</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">筛</div>
+        <h4>组合筛选</h4>
+        <p>城市 / 公司 / 产品线多选筛选</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">排</div>
+        <h4>按站内排名</h4>
+        <p>查看近七天窗口内优先顺序</p>
+      </div>
+    </div>`;
+  stateBox.classList.add("empty-state");
   stateBox.classList.remove("hidden");
   profileEl.classList.add("hidden");
 }
@@ -475,7 +504,21 @@ function deduplicateBestRankedDrivers(rows) {
       });
     }
   });
-  return Array.from(bestByDriver.values());
+  return Array.from(bestByDriver.values())
+    .sort((left, right) => {
+      const rankDiff = rankNumber(left.bestRiskTierRank || left.riskTierRank) -
+        rankNumber(right.bestRiskTierRank || right.riskTierRank);
+      if (rankDiff !== 0) {
+        return rankDiff;
+      }
+      return String(left.driverId || "").localeCompare(String(right.driverId || ""), "zh-Hans-CN", {
+        numeric: true,
+      });
+    })
+    .map((driver, index) => ({
+      ...driver,
+      bestWindowRank: index + 1,
+    }));
 }
 
 async function ensureDriversForFilters(filters) {
@@ -795,6 +838,23 @@ function resetAdvancedFilters() {
   if (isOrganizedSelect) {
     isOrganizedSelect.value = "";
   }
+  updateAdvancedCount();
+}
+
+function updateAdvancedCount() {
+  if (!advancedCount) {
+    return;
+  }
+  const filledCount =
+    advancedFilterInputs.filter((input) => String(input.value || "").trim()).length +
+    (isOrganizedSelect?.value ? 1 : 0);
+  if (filledCount > 0) {
+    advancedCount.textContent = String(filledCount);
+    advancedCount.classList.add("show");
+  } else {
+    advancedCount.textContent = "";
+    advancedCount.classList.remove("show");
+  }
 }
 
 function hasAnyFilter(filters) {
@@ -874,8 +934,7 @@ function filteredDrivers(filters = currentFilters(), limit = Infinity) {
   return allDrivers
     .filter((driver) => matchesFilters(driver, filters))
     .sort((left, right) => {
-      return rankNumber(left.bestRiskTierRank || left.riskTierRank) -
-        rankNumber(right.bestRiskTierRank || right.riskTierRank);
+      return rankNumber(left.bestWindowRank) - rankNumber(right.bestWindowRank);
     })
     .slice(0, limit);
 }
@@ -897,10 +956,26 @@ function appendDriverCards(drivers) {
     const item = document.createElement("button");
     item.className = `driver-card${driverKey(driver) === activeKey ? " active" : ""}`;
     item.dataset.driverKey = driverKey(driver);
-    item.innerHTML = `<strong>${escapeHtml(driver.driverId)}</strong><span>${escapeHtml(driver.subtitle)}<br/>近七天最高排名 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))} · 风险分 ${escapeHtml(driver.riskTierScore)} · 疲劳分 ${escapeHtml(driver.tiredScore)}</span>`;
+    item.innerHTML = `
+      <div class="driver-avatar">${escapeHtml(driverInitial(driver.driverId))}</div>
+      <div class="driver-info">
+        <div class="driver-id">${escapeHtml(driver.driverId)}</div>
+        <div class="driver-sub">${escapeHtml(driver.subtitle || "暂无基础信息")}</div>
+      </div>
+      <div class="driver-metrics">
+        <div class="metric-row">
+          <span class="badge badge-num">站内 ${escapeHtml(displayValue(driver.bestWindowRank))}</span>
+        </div>
+        <div class="metric-label">原始模型 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))}</div>
+      </div>`;
     item.addEventListener("click", () => loadProfile(driver));
     listEl.appendChild(item);
   });
+}
+
+function driverInitial(driverId) {
+  const text = String(driverId || "").trim();
+  return text ? text.slice(-2) : "司";
 }
 
 function renderList(drivers, options = {}) {
@@ -914,7 +989,7 @@ function renderList(drivers, options = {}) {
   if (!drivers.length) {
     const empty = document.createElement("div");
     empty.className = "empty-list";
-    empty.textContent = "输入司机ID，或选择城市、公司、产品线、排名范围后显示匹配结果。";
+    empty.textContent = "输入司机ID，或选择城市、公司、产品线、站内排名范围后显示匹配结果。";
     listEl.appendChild(empty);
     return;
   }
@@ -1278,6 +1353,7 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
       dataDate: driver.dataDate || "暂无数据",
       riskTierRank: displayValue(driver.riskTierRank),
       bestRiskTierRank: displayValue(driver.bestRiskTierRank || driver.riskTierRank),
+      bestWindowRank: displayValue(driver.bestWindowRank),
       riskTierScore: displayValue(driver.riskTierScore),
       tiredScore: displayValue(driver.tiredScore),
     },
@@ -1301,6 +1377,8 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
           field("产品线 product_level2_name", driver.product),
           field("年龄 age", driver.age),
           field("是否组织化 is_organized", normalizeBooleanLabel(driver.isOrganized)),
+          field("站内近七天排名 bestWindowRank", driver.bestWindowRank),
+          field("原始模型排名 risk_tier_rank", driver.bestRiskTierRank || driver.riskTierRank),
         ],
       },
       {
@@ -1363,7 +1441,8 @@ function renderSourceMeta(profile) {
     source.generatedAt || meta.generatedAt || resolveStaticGeneratedAt(staticManifest, staticMeta) || "暂无数据";
   return `
     <section class="source-meta" aria-label="数据来源">
-      <span>最高排名命中日期：${escapeHtml(dataDate)}</span>
+      <span>原始模型排名命中日期：${escapeHtml(dataDate)}</span>
+      <span>原始模型排名：${escapeHtml(meta.bestRiskTierRank || meta.riskTierRank || "暂无数据")}</span>
       <span>同步状态：${escapeHtml(syncStatus)}</span>
       <span>快照生成：${escapeHtml(generatedAt)}</span>
     </section>`;
@@ -1372,13 +1451,19 @@ function renderSourceMeta(profile) {
 function renderProfile(profile) {
   profileEl.innerHTML = `
     <header class="profile-header">
-      <div class="profile-title">
+      <div class="profile-top profile-title">
         <div>
-          <span class="section-kicker">${escapeHtml(profile.header.title)}</span>
-          <h2>司机ID ${escapeHtml(profile.driverId)}</h2>
+          <div class="profile-id-row">
+            <div class="profile-avatar">${escapeHtml(driverInitial(profile.driverId))}</div>
+            <div>
+              <p class="profile-kicker">${escapeHtml(profile.header.title)} · ${escapeHtml(profile.meta.dataDate || profile.source?.dataDate || "暂无日期")} 快照</p>
+              <h2 class="profile-id">司机ID ${escapeHtml(profile.driverId)}</h2>
+              <p class="profile-sub">${escapeHtml(profile.summary || "")}</p>
+            </div>
+          </div>
           ${renderHeaderChips(profile.header.chips)}
         </div>
-        <div class="risk-box"><span>近七天最高排名</span><b>${escapeHtml(profile.meta.bestRiskTierRank || profile.meta.riskTierRank)}</b></div>
+        <div class="risk-box"><span class="label">站内近七天排名</span><b class="value">${escapeHtml(profile.meta.bestWindowRank || "暂无数据")}</b></div>
       </div>
       ${renderSourceMeta(profile)}
     </header>
@@ -1403,6 +1488,7 @@ function renderProfile(profile) {
     </section>
   `;
   stateBox.classList.add("hidden");
+  stateBox.classList.remove("empty-state");
   profileEl.classList.remove("hidden");
   profileEl.dataset.driverKey = `${profile.driverId || ""}::${profile.meta?.dataDate || profile.source?.dataDate || ""}`;
   listEl.querySelectorAll(".driver-card").forEach((item) => item.classList.remove("active"));
@@ -1477,7 +1563,7 @@ async function downloadCurrentFilter() {
   }
   const filters = currentFilters();
   if (!hasAnyFilter(filters)) {
-    showState("请先输入司机ID，或选择城市、公司、产品线、排名范围后再下载筛选名单。");
+    showState("请先输入司机ID，或选择城市、公司、产品线、站内排名范围后再下载筛选名单。");
     renderList([]);
     return;
   }
@@ -1504,7 +1590,7 @@ searchButton.addEventListener("click", async () => {
   }
   const filters = currentFilters();
   if (!hasAnyFilter(filters)) {
-    showState("请先输入司机ID，或选择城市、公司、产品线、排名范围。");
+    showState("请先输入司机ID，或选择城市、公司、产品线、站内排名范围。");
     renderList([]);
     return;
   }
@@ -1523,6 +1609,10 @@ driverIdInput.addEventListener("keydown", (event) => {
     searchButton.click();
   }
 });
+
+advancedFilterInputs.forEach((input) => input.addEventListener("input", updateAdvancedCount));
+isOrganizedSelect?.addEventListener("change", updateAdvancedCount);
+updateAdvancedCount();
 
 resetButton.addEventListener("click", () => {
   driverIdInput.value = "";

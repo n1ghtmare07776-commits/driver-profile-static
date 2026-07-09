@@ -50,57 +50,78 @@
             产品线（二级，可多选）
             <div id="productSelect" class="token-picker" role="group" aria-label="产品线二级多选"></div>
           </label>
-          <fieldset id="advancedFilters" class="advanced-filters">
-            <legend>高级筛选</legend>
-            <div class="range-filter" data-field="bestRiskTierRank">
-              <span>近七天最高排名</span>
-              <input id="bestRiskTierRank_min" type="number" inputmode="numeric" placeholder="最小" />
-              <input id="bestRiskTierRank_max" type="number" inputmode="numeric" placeholder="最大，例如50000" />
+          <details id="advancedFilters" class="advanced-filters">
+            <summary class="advanced-summary">
+              <span class="advanced-summary-text">高级筛选</span>
+              <span class="advanced-summary-count" id="advancedCount"></span>
+              <svg class="advanced-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M3 5 L7 9 L11 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </summary>
+            <div class="advanced-body">
+              <div class="range-filter" data-field="bestWindowRank">
+                <span>站内近七天排名</span>
+                <input id="bestWindowRank_min" type="number" inputmode="numeric" placeholder="最小" />
+                <input id="bestWindowRank_max" type="number" inputmode="numeric" placeholder="最大，例如50000" />
+              </div>
+              <div class="range-filter" data-field="age">
+                <span>年龄</span>
+                <input id="age_min" type="number" inputmode="decimal" placeholder="最小" />
+                <input id="age_max" type="number" inputmode="decimal" placeholder="最大" />
+              </div>
+              <div class="range-filter" data-field="consecutive_days">
+                <span>连续出车天数</span>
+                <input id="consecutive_days_min" type="number" inputmode="decimal" placeholder="最小" />
+                <input id="consecutive_days_max" type="number" inputmode="decimal" placeholder="最大" />
+              </div>
+              <div class="range-filter" data-field="server_dur_hour">
+                <span>服务时长</span>
+                <input id="server_dur_hour_min" type="number" inputmode="decimal" placeholder="最小" />
+                <input id="server_dur_hour_max" type="number" inputmode="decimal" placeholder="最大" />
+              </div>
+              <div class="range-filter" data-field="order_cnt_21_09_7d_rate">
+                <span>夜间占比（0-1）</span>
+                <input id="order_cnt_21_09_7d_rate_min" type="number" inputmode="decimal" step="0.01" placeholder="最小" />
+                <input id="order_cnt_21_09_7d_rate_max" type="number" inputmode="decimal" step="0.01" placeholder="最大" />
+              </div>
+              <div class="range-filter" data-field="sleep_deprivation_days">
+                <span>睡眠不足天数</span>
+                <input id="sleep_deprivation_days_min" type="number" inputmode="decimal" placeholder="最小" />
+                <input id="sleep_deprivation_days_max" type="number" inputmode="decimal" placeholder="最大" />
+              </div>
+              <label class="select-filter">
+                <span>是否组织化</span>
+                <select id="isOrganizedSelect">
+                  <option value="">全部</option>
+                  <option value="是">是</option>
+                  <option value="否">否</option>
+                </select>
+              </label>
             </div>
-            <div class="range-filter" data-field="age">
-              <span>年龄</span>
-              <input id="age_min" type="number" inputmode="decimal" placeholder="最小" />
-              <input id="age_max" type="number" inputmode="decimal" placeholder="最大" />
-            </div>
-            <div class="range-filter" data-field="consecutive_days">
-              <span>连续出车天数</span>
-              <input id="consecutive_days_min" type="number" inputmode="decimal" placeholder="最小" />
-              <input id="consecutive_days_max" type="number" inputmode="decimal" placeholder="最大" />
-            </div>
-            <div class="range-filter" data-field="server_dur_hour">
-              <span>服务时长</span>
-              <input id="server_dur_hour_min" type="number" inputmode="decimal" placeholder="最小" />
-              <input id="server_dur_hour_max" type="number" inputmode="decimal" placeholder="最大" />
-            </div>
-            <div class="range-filter" data-field="order_cnt_21_09_7d_rate">
-              <span>夜间占比（0-1）</span>
-              <input id="order_cnt_21_09_7d_rate_min" type="number" inputmode="decimal" step="0.01" placeholder="最小" />
-              <input id="order_cnt_21_09_7d_rate_max" type="number" inputmode="decimal" step="0.01" placeholder="最大" />
-            </div>
-            <div class="range-filter" data-field="sleep_deprivation_days">
-              <span>睡眠不足天数</span>
-              <input id="sleep_deprivation_days_min" type="number" inputmode="decimal" placeholder="最小" />
-              <input id="sleep_deprivation_days_max" type="number" inputmode="decimal" placeholder="最大" />
-            </div>
-            <label class="select-filter">
-              <span>是否组织化</span>
-              <select id="isOrganizedSelect">
-                <option value="">全部</option>
-                <option value="是">是</option>
-                <option value="否">否</option>
-              </select>
-            </label>
-          </fieldset>
+          </details>
           <div class="filter-actions">
             <button id="searchButton">查询</button>
             <button id="resetButton" class="ghost-button" type="button">重置</button>
           </div>
         </section>
-        <button id="exportButton" class="ghost-button">下载当前筛选名单</button>
+        <div class="export-row">
+          <button id="exportButton" class="ghost-button" type="button">下载当前筛选名单</button>
+        </div>
         <section id="driverList" class="driver-list" aria-label="司机列表"></section>
       </aside>
       <section class="profile-panel">
-        <div id="stateBox" class="state-box">请选择或输入一个司机ID。</div>
+        <div id="stateBox" class="state-box empty-state">
+          <div class="empty-illust" aria-hidden="true">
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+              <circle cx="28" cy="20" r="9" stroke="currentColor" stroke-width="2.2" />
+              <path d="M10 46c0-10 8-14 18-14s18 4 18 14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <circle cx="44" cy="14" r="6" fill="#e6f1fb" stroke="currentColor" stroke-width="1.8" />
+              <text x="44" y="18" font-size="9" font-weight="700" fill="currentColor" text-anchor="middle">?</text>
+            </svg>
+          </div>
+          <h2 class="empty-title">查询一位司机的画像</h2>
+          <p class="empty-desc">在左侧输入司机 ID，或通过城市、公司、产品线、站内排名组合筛选定位司机。</p>
+        </div>
         <article id="profile" class="profile hidden"></article>
       </section>
     </main>
