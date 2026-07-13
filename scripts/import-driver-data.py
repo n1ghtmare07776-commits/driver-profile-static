@@ -4,6 +4,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -23,37 +24,19 @@ DEFAULT_REFERENCE_CANDIDATES = [
 NUMERIC_FIELDS = [
     "age",
     "consecutive_days",
-    "consecutive_days_max_6h",
-    "min_sleep_duration",
-    "peak_service_dur",
-    "abnormal_driving_cnt",
-    "temp_change_1d",
     "consecutive_days_max",
     "online_dur_hour",
-    "lately_7d_except_sub_online_dur_hour",
-    "order_cnt_21_09_7d",
     "order_cnt_21_09_7d_rate",
-    "r_deep_night_peak",
     "sleep_deprivation_days",
     "server_dur_hour",
-    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
     "lately_30d_online_dur_hour",
+    "lately_7d_except_sub_online_dur_hour",
     "past_7_day_non_listening_period",
     "non_listen_hours_7d",
     "non_listen_hours_7d_all",
     "high_pressure",
-    "low_pressure",
-    "systolic_bp_health",
-    "diastolic_bp",
-    "diastolic_bp_measure",
-    "body_base_coeff",
-    "body_risk_factor",
-    "hyperglycemia_value",
-    "hyperlipidemia_value",
-    "fatigue_index_7d",
-    "max_improved_tired_risk_score",
     "systolic_blood_pressure",
     "risk_tier_rank",
     "risk_tier_score",
@@ -63,49 +46,15 @@ NUMERIC_FIELDS = [
 STATIC_DRIVER_NUMERIC_FIELDS = [
     "age",
     "consecutive_days",
-    "consecutive_days_max_6h",
-    "min_sleep_duration",
-    "peak_service_dur",
-    "abnormal_driving_cnt",
-    "temp_change_1d",
-    "consecutive_days_max",
-    "online_dur_hour",
-    "lately_7d_except_sub_online_dur_hour",
-    "order_cnt_21_09_7d",
     "server_dur_hour",
-    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
-    "lately_30d_online_dur_hour",
     "order_cnt_21_09_7d_rate",
-    "r_deep_night_peak",
     "sleep_deprivation_days",
-    "high_pressure",
-    "low_pressure",
-    "systolic_bp_health",
-    "diastolic_bp_measure",
-    "body_base_coeff",
-    "body_risk_factor",
-    "hyperglycemia_value",
-    "hyperlipidemia_value",
-    "fatigue_index_7d",
-    "max_improved_tired_risk_score",
     "past_7_day_non_listening_period",
     "risk_tier_rank",
     "risk_tier_score",
     "tired_score",
-]
-
-STATIC_DRIVER_TEXT_FIELDS = [
-    "is_sleep_deprived",
-    "is_regular_night",
-    "is_long_consecutive",
-    "is_sudden_fatigue",
-    "self_high_bp",
-    "self_high_blood_sugar",
-    "self_high_blood_lipid",
-    "is_hypertension_flag",
-    "bp_risk_overall",
 ]
 
 COMPACT_DRIVER_SCHEMA = [
@@ -117,42 +66,11 @@ COMPACT_DRIVER_SCHEMA = [
     "isOrganized",
     "age",
     "consecutive_days",
-    "consecutive_days_max_6h",
-    "min_sleep_duration",
-    "peak_service_dur",
-    "abnormal_driving_cnt",
-    "temp_change_1d",
-    "consecutive_days_max",
-    "online_dur_hour",
-    "lately_7d_except_sub_online_dur_hour",
-    "order_cnt_21_09_7d",
     "server_dur_hour",
-    "server_dur_sum_7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
-    "lately_30d_online_dur_hour",
     "order_cnt_21_09_7d_rate",
-    "r_deep_night_peak",
     "sleep_deprivation_days",
-    "is_sleep_deprived",
-    "is_regular_night",
-    "is_long_consecutive",
-    "is_sudden_fatigue",
-    "high_pressure",
-    "low_pressure",
-    "systolic_bp_health",
-    "diastolic_bp_measure",
-    "body_base_coeff",
-    "body_risk_factor",
-    "hyperglycemia_value",
-    "hyperlipidemia_value",
-    "fatigue_index_7d",
-    "max_improved_tired_risk_score",
-    "self_high_bp",
-    "self_high_blood_sugar",
-    "self_high_blood_lipid",
-    "is_hypertension_flag",
-    "bp_risk_overall",
     "past_7_day_non_listening_period",
     "riskTierRank",
     "riskTierScore",
@@ -179,26 +97,13 @@ CHINESE_FIELD_MAP = {
     "年龄": "age",
     "连续出车天数": "consecutive_days",
     "近90天最高连日出车天数": "consecutive_days_max",
-    "连续多天服务超过6小时的最大天数": "consecutive_days_max_6h",
-    "连续6小时高强度天数": "consecutive_days_max_6h",
-    "最短睡眠时长": "min_sleep_duration",
-    "最短睡眠时长（小时）": "min_sleep_duration",
-    "高峰期服务时长": "peak_service_dur",
-    "高峰期服务时长（小时）": "peak_service_dur",
-    "异常驾驶次数": "abnormal_driving_cnt",
-    "近1天气温变化幅度": "temp_change_1d",
-    "近1天气温变化幅度（度）": "temp_change_1d",
     "当日在线时长（小时）": "online_dur_hour",
     "当日服务时长（小时）": "server_dur_hour",
     "近7日非预约单在线时长（小时）": "lately_7d_except_sub_online_dur_hour",
     "近30天在线时长（小时）": "lately_30d_online_dur_hour",
     "近30天在非预约单线时长（小时）": "server_dur_hour_30d",
     "近30日服务时长（小时）": "server_dur_sum_30d",
-    "近7天服务时长总和": "server_dur_sum_7d",
-    "近7天服务时长总和（小时）": "server_dur_sum_7d",
     "近7天21-9点完单量占比": "order_cnt_21_09_7d_rate",
-    "深夜高峰服务偏好/占比": "r_deep_night_peak",
-    "深夜高峰服务占比": "r_deep_night_peak",
     "近7天睡眠不足天数": "sleep_deprivation_days",
     "健康拍-高压": "systolic_blood_pressure",
     "测量-高压": "high_pressure",
@@ -220,10 +125,7 @@ CHINESE_FIELD_MAP = {
     "测量-血压等级": "bp_measure_level",
     "健康拍-低压": "diastolic_bp",
     "测量-低压": "diastolic_bp_measure",
-    "低压": "low_pressure",
     "近7天最高劳累劳指数": "fatigue_index_7d",
-    "最大疲劳风险分": "max_improved_tired_risk_score",
-    "最大疲劳风险评分": "max_improved_tired_risk_score",
     "健康拍-高压": "systolic_bp_health",
     "组织化司机队长id": "team_leader_id",
     "当日模型百分比": "risk_percentile",
@@ -244,10 +146,6 @@ CHINESE_FIELD_MAP = {
     "近7天非听单时段（非预约单）": "non_listen_hours_7d",
     "近7天非听单时段（含预约单）": "non_listen_hours_7d_all",
     "身体基础系数": "body_base_coeff",
-    "身体风险因子": "body_risk_factor",
-    "血糖风险值": "hyperglycemia_value",
-    "血脂风险值": "hyperlipidemia_value",
-    "是否高血压": "is_hypertension_flag",
     "自评-高血糖": "self_high_blood_sugar",
     "自评-高血脂": "self_high_blood_lipid",
     "自评-高血压": "self_high_bp",
@@ -351,11 +249,7 @@ def read_rows(source_path):
         raise SystemExit("仅支持 .xlsx、.xls、.csv、.json 输入文件。")
     if suffix not in {".json"}:
         rows = frame.fillna("").to_dict(orient="records")
-    return apply_field_mapping(rows)
-
-
-def apply_field_mapping(rows):
-    # Map Chinese column names to English field names for source and case reference files.
+    # Map Chinese column names to English field names
     if rows and any(k in CHINESE_FIELD_MAP for k in rows[0]):
         for row in rows:
             for cn, en in CHINESE_FIELD_MAP.items():
@@ -418,10 +312,10 @@ def read_reference_rows(path):
     elif suffix == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))
         rows = payload.get("drivers", payload) if isinstance(payload, dict) else payload
-        return apply_field_mapping(rows) if isinstance(rows, list) else []
+        return rows if isinstance(rows, list) else []
     else:
         return []
-    return apply_field_mapping(frame.fillna("").to_dict(orient="records"))
+    return frame.fillna("").to_dict(orient="records")
 
 
 def collect_reference_metrics(strategy_config):
@@ -500,12 +394,6 @@ def compare_numbers(driver_value, threshold_value, operator):
     return False
 
 
-def threshold_relation_label(operator):
-    if operator in {"<", "<="}:
-        return "低于"
-    return "高于"
-
-
 def replace_template(template, context):
     text = template
     for key, value in context.items():
@@ -550,12 +438,11 @@ def evaluate_leaf_condition(row, condition, reference_stats):
     elif threshold_value is None:
         reason = threshold_missing_reason(threshold, reference_stats)
     unit = condition.get("unit", "")
-    relation_label = threshold_relation_label(threshold_operator)
     return {
         "matched": matched,
         "evidence": (
             f"{label}{format_number(driver_value)}{unit}，"
-            f"{relation_label}case均值{format_number(threshold_value)}{unit}"
+            f"高于case均值{format_number(threshold_value)}{unit}"
         ),
         "debug": {
             "policy": threshold.get("policy"),
@@ -567,7 +454,6 @@ def evaluate_leaf_condition(row, condition, reference_stats):
             "driverValue": driver_value,
             "thresholdValue": threshold_value,
             "thresholdLabel": "case均值" if threshold.get("policy") == "case_mean" else "",
-            "thresholdRelationLabel": relation_label,
             "sampleCount": reference_stats.get(threshold.get("reference_metric"), {}).get("sample_count"),
             "unit": unit,
             "reason": reason,
@@ -607,7 +493,6 @@ def render_rule_strategy(row, rule, result):
         context = {
             "driver_value": format_number(driver_value),
             "threshold_value": format_number(threshold_value),
-            "threshold_relation": threshold_relation_label(threshold.get("operator", ">")),
             "unit": rule.get("unit", ""),
             "driver_metric_label": rule.get("driver_metric_label", rule.get("driver_metric", "")),
             "reference_metric_label": threshold.get("reference_metric", ""),
@@ -619,29 +504,10 @@ def render_rule_strategy(row, rule, result):
         "title": rule["title"],
         "category": rule.get("category", ""),
         "priority": rule.get("priority", 999),
-        "priority_tier": rule.get("priority_tier", ""),
-        "badges": rule.get("badges", []),
         "evidence": replace_template(rule.get("evidence_template", ""), context),
         "advice": replace_template(rule.get("advice_template", ""), context),
         "tags": rule.get("tags", []),
     }
-
-
-def strategy_badge_rank(item):
-    badges = item.get("badges", [])
-    has_high_risk = any(badge.get("kind") == "high-risk" for badge in badges if isinstance(badge, dict))
-    has_explainable = any(badge.get("kind") == "explainable" for badge in badges if isinstance(badge, dict))
-    if has_high_risk and has_explainable:
-        return 0
-    if has_high_risk:
-        return 1
-    if has_explainable:
-        return 2
-    return 3
-
-
-def strategy_sort_key(item):
-    return (strategy_badge_rank(item), item.get("priority", 999), item.get("key", ""))
 
 
 def strategies_for(row, strategy_config, reference_stats):
@@ -665,12 +531,12 @@ def strategies_for(row, strategy_config, reference_stats):
             {
                 "key": fallback.get("key", "regular-care"),
                 "title": fallback.get("title", "常规关怀"),
-                "evidence": fallback.get("evidence", "当前没有策略指标超过配置阈值。"),
+                "evidence": fallback.get("evidence", "当前未命中明显风险策略。"),
                 "advice": fallback.get("advice", "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。"),
                 "priority": fallback.get("priority", 999),
             }
         )
-    return sorted(strategies, key=strategy_sort_key)
+    return sorted(strategies, key=lambda item: item.get("priority", 999))
 
 
 def matched_evidence_values(result):
@@ -706,7 +572,6 @@ def strategy_hits_for(row, strategy_config, reference_stats):
                 {
                     "key": rule["key"],
                     "priority": rule.get("priority", 999),
-                    "badges": rule.get("badges", []),
                     "evidence": matched_evidence_values(result),
                 }
             )
@@ -716,11 +581,10 @@ def strategy_hits_for(row, strategy_config, reference_stats):
             {
                 "key": fallback.get("key", "regular-care"),
                 "priority": fallback.get("priority", 999),
-                "badges": fallback.get("badges", []),
                 "evidence": [],
             }
         )
-    return sorted(hits, key=strategy_sort_key)
+    return sorted(hits, key=lambda item: item.get("priority", 999))
 
 
 def strategy_threshold_summary(strategy_config, window_rows, reference_rows, reference_path, reference_stats):
@@ -737,9 +601,6 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
                     "source": threshold.get("source"),
                     "reference_metric": threshold.get("reference_metric"),
                     "operator": threshold.get("operator"),
-                    "priority": rule.get("priority"),
-                    "priority_tier": rule.get("priority_tier", ""),
-                    "badges": rule.get("badges", []),
                     "threshold_value": threshold_value_for(threshold, reference_stats),
                     "threshold_label": "case均值" if threshold.get("policy") == "case_mean" else "",
                     "sample_count": reference_stats.get(threshold.get("reference_metric"), {}).get("sample_count"),
@@ -757,9 +618,6 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
                     "source": item_threshold.get("source") if item_threshold else "manual_condition",
                     "reference_metric": item_threshold.get("reference_metric") if item_threshold else None,
                     "operator": item_threshold.get("operator") if item_threshold else item.get("operator"),
-                    "priority": rule.get("priority"),
-                    "priority_tier": rule.get("priority_tier", ""),
-                    "badges": rule.get("badges", []),
                     "threshold_value": threshold_value_for(item_threshold, reference_stats) if item_threshold else item.get("values"),
                     "threshold_label": "case均值" if item_threshold and item_threshold.get("policy") == "case_mean" else "",
                     "sample_count": reference_stats.get(item_threshold.get("reference_metric"), {}).get("sample_count") if item_threshold else None,
@@ -782,27 +640,19 @@ def strategy_threshold_summary(strategy_config, window_rows, reference_rows, ref
 
 
 def summary_for(row):
-    def visible(value):
-        text = display(value)
-        return "" if text == "暂无数据" else text
-
-    def phrase(value, prefix="", suffix=""):
-        text = visible(value)
-        return f"{prefix}{text}{suffix}" if text else ""
-
-    parts = [
-        phrase(get(row, "age"), suffix="岁"),
-        visible(get(row, "resident_city_name", "city")),
-        visible(get(row, "product_level2_name", "product")),
-        visible(get(row, "company_name", "company")),
-        phrase(get(row, "consecutive_days"), prefix="连续出车", suffix="天"),
-        phrase(get(row, "server_dur_hour"), prefix="当日服务", suffix="小时"),
-        phrase(get(row, "order_cnt_21_09_7d_rate"), prefix="夜间出车占比"),
-        phrase(get(row, "sleep_deprivation_days"), prefix="睡眠不足", suffix="天"),
-        phrase(get(row, "dt", "dataDate"), prefix="数据日期"),
-    ]
-    text = "，".join(part for part in parts if part)
-    return f"{text}。" if text else "暂无可展示画像信息。"
+    age = display(get(row, "age"))
+    city = display(get(row, "resident_city_name", "city"))
+    product = display(get(row, "product_level2_name", "product"))
+    company = display(get(row, "company_name", "company"))
+    days = display(get(row, "consecutive_days"))
+    service = display(get(row, "server_dur_hour"))
+    night = display(get(row, "order_cnt_21_09_7d_rate"))
+    sleep = display(get(row, "sleep_deprivation_days"))
+    dt = display(get(row, "dt", "dataDate"))
+    return (
+        f"{age}岁，{city}，{product}，{company}，连续出车{days}天，"
+        f"当日服务{service}小时，夜间出车占比{night}，睡眠不足{sleep}天，数据日期{dt}。"
+    )
 
 
 def header_chips(row, strategies=None):
@@ -875,13 +725,8 @@ def profile_for(row, strategy_config, reference_stats):
                 "title": "出车/服务指标",
                 "items": [
                     field("连续出车天数 consecutive_days", get(row, "consecutive_days")),
-                    field("最高连日出车天数 consecutive_days_max", get(row, "consecutive_days_max")),
-                    field("当日在线时长 online_dur_hour", get(row, "online_dur_hour")),
                     field("当日服务时长 server_dur_hour", get(row, "server_dur_hour")),
-                    field("近7日非预约单在线时长 lately_7d_except_sub_online_dur_hour", get(row, "lately_7d_except_sub_online_dur_hour")),
                     field("近30天服务时长 server_dur_sum_30d", get(row, "server_dur_sum_30d", "server_dur_hour_30d")),
-                    field("近30天在线时长 lately_30d_online_dur_hour", get(row, "lately_30d_online_dur_hour")),
-                    field("是否长期连日出车 is_long_consecutive", get(row, "is_long_consecutive")),
                 ],
             },
             {
@@ -889,31 +734,8 @@ def profile_for(row, strategy_config, reference_stats):
                 "title": "疲劳相关",
                 "items": [
                     field("夜间出车占比 order_cnt_21_09_7d_rate", get(row, "order_cnt_21_09_7d_rate")),
-                    field("是否常规夜班司机 is_regular_night", get(row, "is_regular_night")),
                     field("睡眠不足天数 sleep_deprivation_days", get(row, "sleep_deprivation_days")),
-                    field("是否睡眠不足 is_sleep_deprived", get(row, "is_sleep_deprived")),
-                    field("是否突然累 is_sudden_fatigue", get(row, "is_sudden_fatigue")),
                     field("疲劳分 tired_score", get(row, "tired_score", "tiredScore")),
-                    field("近7天最高劳累指数 fatigue_index_7d", get(row, "fatigue_index_7d")),
-                    field("最大疲劳风险分 max_improved_tired_risk_score", get(row, "max_improved_tired_risk_score")),
-                ],
-            },
-            {
-                "key": "health",
-                "title": "健康相关",
-                "items": [
-                    field("测量高压 high_pressure", get(row, "high_pressure")),
-                    field("测量低压 diastolic_bp_measure", get(row, "diastolic_bp_measure", "low_pressure")),
-                    field("健康拍高压 systolic_bp_health", get(row, "systolic_bp_health")),
-                    field("身体基础系数 body_base_coeff", get(row, "body_base_coeff")),
-                    field("身体风险因子 body_risk_factor", get(row, "body_risk_factor")),
-                    field("血糖风险值 hyperglycemia_value", get(row, "hyperglycemia_value")),
-                    field("血脂风险值 hyperlipidemia_value", get(row, "hyperlipidemia_value")),
-                    field("整体血压风险 bp_risk_overall", get(row, "bp_risk_overall")),
-                    field("是否高血压 is_hypertension_flag", get(row, "is_hypertension_flag")),
-                    field("自评高血压 self_high_bp", get(row, "self_high_bp")),
-                    field("自评高血糖 self_high_blood_sugar", get(row, "self_high_blood_sugar")),
-                    field("自评高血脂 self_high_blood_lipid", get(row, "self_high_blood_lipid")),
                 ],
             },
         ],
@@ -945,14 +767,15 @@ def index_item_for(row):
                 "tired_score": "tiredScore",
             }.get(field_name, field_name)
             item[camel_name] = value
-    for field_name in STATIC_DRIVER_TEXT_FIELDS:
-        value = clean_text(get(row, field_name))
-        if value:
-            item[field_name] = value
     return item
 
 
 def static_driver_for(row, strategy_config, reference_stats):
+    # The UI's "near-seven-day best rank" must use the source's seven-day rank.
+    # Fall back to the daily rank only when that source column is unavailable.
+    seven_day_rank = to_number(get(row, "risk_rank_7d_min"))
+    if seven_day_rank is not None:
+        row = {**row, "risk_tier_rank": seven_day_rank}
     item = index_item_for(row)
     strategy_hits = strategy_hits_for(row, strategy_config, reference_stats)
     item["strategyKeys"] = [hit["key"] for hit in strategy_hits]
@@ -1072,6 +895,10 @@ def directory_size(path):
     return sum(file.stat().st_size for file in path.rglob("*") if file.is_file())
 
 
+def release_root(out_dir):
+    return out_dir.parent if out_dir.name == "data" else out_dir
+
+
 def clean_stale_static_outputs(out_dir):
     stale_names = [
         "driver-index.json",
@@ -1092,6 +919,17 @@ def clean_stale_static_outputs(out_dir):
         for stale_path in out_dir.glob(pattern):
             if stale_path.name != "drivers.json":
                 stale_path.unlink()
+
+
+def clean_derived_indexes(out_dir):
+    """Remove indexes that must always be rebuilt from the retained daily files."""
+    for name in ("filter-index.json", "filter-index.json.gz", "driver-lookup-index.json"):
+        path = out_dir / name
+        if path.exists():
+            path.unlink()
+    lookup_dir = out_dir / "lookup"
+    if lookup_dir.exists():
+        shutil.rmtree(lookup_dir)
 
 
 def daily_file_path(out_dir, data_date):
@@ -1255,7 +1093,7 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
     dropped_dates = []
     static_drivers = load_daily_static_drivers(out_dir, window_start, window_end)
     dates = sorted_unique(item["dataDate"] for item in static_drivers)
-    total_size = directory_size(out_dir)
+    total_size = directory_size(release_root(out_dir))
     if total_size <= limit_bytes:
         return static_drivers, dates, {
             "actual_dates": dates,
@@ -1286,11 +1124,12 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
                 "actual_dates": dates,
                 "dropped_dates": dropped_dates,
                 "drop_reason": "package_size_limit",
-                "package_size_mb": round(directory_size(out_dir) / 1024 / 1024, 3),
+                "package_size_mb": round(directory_size(release_root(out_dir)) / 1024 / 1024, 3),
                 "package_size_limit_mb": size_limit_mb,
             },
         )
-        total_size = directory_size(out_dir)
+        build_derived_indexes(out_dir)
+        total_size = directory_size(release_root(out_dir))
         if total_size <= limit_bytes:
             break
 
@@ -1318,6 +1157,35 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
             "需要继续按城市/分片拆分或改用后端 API。"
         )
     return static_drivers, dates, size_control
+
+
+def build_filter_index(out_dir):
+    """Build the lightweight seven-day filter index before checking package size."""
+    subprocess.run(
+        ["node", str(ROOT / "scripts" / "build-filter-index.mjs"), str(out_dir)],
+        check=True,
+    )
+
+
+def build_direct_driver_lookup(out_dir, bucket_count=128):
+    """Build balanced gzip hash shards so exact searches avoid daily files."""
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "build-direct-driver-lookup.py"),
+            "--data-dir",
+            str(out_dir),
+            "--bucket-count",
+            str(bucket_count),
+        ],
+        check=True,
+    )
+
+
+def build_derived_indexes(out_dir):
+    clean_derived_indexes(out_dir)
+    build_filter_index(out_dir)
+    build_direct_driver_lookup(out_dir)
 
 
 def main():
@@ -1356,6 +1224,7 @@ def main():
     ]
 
     clean_stale_static_outputs(out_dir)
+    clean_derived_indexes(out_dir)
     migrate_legacy_drivers_json(out_dir, window_start, window_end)
     remove_daily_files_outside_window(out_dir, window_start, window_end)
 
@@ -1376,6 +1245,7 @@ def main():
         strategy_threshold_summary(strategy_config, window_rows, reference_rows, reference_path, reference_stats),
     )
     write_pretty_json(out_dir / "strategy-rules.json", strategy_config)
+    build_derived_indexes(out_dir)
     static_drivers, dates, size_control = enforce_size_limit(
         out_dir,
         upload_date,
@@ -1383,8 +1253,19 @@ def main():
         window_end,
         args.size_limit_mb,
     )
+    size_control.update(
+        {
+            "driver_lookup_index": "driver-lookup-index.json",
+            "driver_lookup_shard_mode": "fnv1a32-modulo",
+            "driver_lookup_bucket_count": 128,
+        }
+    )
+    total_size = directory_size(release_root(out_dir))
+    size_control["package_size_mb"] = round(total_size / 1024 / 1024, 3)
     write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, args.size_limit_mb, size_control)
-    total_size = directory_size(out_dir)
+    total_size = directory_size(release_root(out_dir))
+    size_control["package_size_mb"] = round(total_size / 1024 / 1024, 3)
+    write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, args.size_limit_mb, size_control)
 
     print(f"输入文件：{source_path}")
     print(f"输出目录：{out_dir}")

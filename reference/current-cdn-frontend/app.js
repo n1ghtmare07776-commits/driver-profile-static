@@ -32,21 +32,26 @@ let staticManifest = {};
 let strategyRuleIndex = buildStrategyRuleIndex({});
 let allDrivers = [];
 let driverDataIndex = null;
+let driverLookupIndex = null;
+let filterWorker = null;
+let filterWorkerReady = false;
+let filterRequestId = 0;
+const pendingFilterRequests = new Map();
+let filterWorkerStartup = null;
+let filterWorkerWaitTaskId = 0;
+let loadTaskId = 0;
+let loadProgressPercent = 0;
+let loadProgressHideTimer = null;
+let loadProgressShowFrame = null;
 const loadedDriversByDate = new Map();
+const loadedDriverLookupByPrefix = new Map();
 let currentListRows = [];
 let renderedListCount = 0;
 let staticDataReady = false;
 let userHasRenderedResults = false;
 const tokenPickers = [];
 const listPageSize = 50;
-const contactStatusStorageKey = "driver-profile-contact-status-v1";
 const accessLogStorageKey = "driver-profile-access-log-v1";
-const contactStatusFlow = ["pending", "contacted", "followup"];
-const contactStatusLabels = {
-  pending: "待联系",
-  contacted: "已联系",
-  followup: "待回访",
-};
 
 const advancedFilterFields = [
   "bestRiskTierRank",
@@ -116,19 +121,65 @@ function setActionsEnabled(enabled) {
   exportButton.disabled = !enabled;
 }
 
-function updateLoadProgress(percent, message) {
-  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+function startLoadTask(percent = 0, message = "正在读取数据...") {
+  loadTaskId += 1;
+  if (loadProgressHideTimer) {
+    window.clearTimeout(loadProgressHideTimer);
+    loadProgressHideTimer = null;
+  }
+  if (loadProgressShowFrame) {
+    window.cancelAnimationFrame(loadProgressShowFrame);
+    loadProgressShowFrame = null;
+  }
+  // Reset only while hidden so a completed bar never visibly runs backwards.
+  loadProgress?.classList.add("hidden");
   if (loadProgressBar) {
-    loadProgressBar.style.width = `${safePercent}%`;
+    loadProgressBar.style.transition = "none";
+    loadProgressBar.style.width = "0%";
+    void loadProgressBar.offsetWidth;
+  }
+  loadProgressPercent = 0;
+  updateLoadProgress(percent, message, loadTaskId);
+  if (loadProgressBar) {
+    void loadProgressBar.offsetWidth;
+    loadProgressBar.style.transition = "";
+  }
+  loadProgressShowFrame = window.requestAnimationFrame(() => {
+    loadProgress?.classList.remove("hidden");
+    loadProgressShowFrame = null;
+  });
+  return loadTaskId;
+}
+
+function updateLoadProgress(percent, message, taskId = loadTaskId) {
+  if (taskId !== loadTaskId) {
+    return;
+  }
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  const monotonicPercent = Math.max(loadProgressPercent, safePercent);
+  loadProgressPercent = monotonicPercent;
+  if (loadProgressBar) {
+    loadProgressBar.style.width = `${monotonicPercent}%`;
   }
   if (loadProgressText) {
-    loadProgressText.textContent = message || `读取静态数据 ${Math.round(safePercent)}%`;
+    loadProgressText.textContent = message || `读取静态数据 ${Math.round(monotonicPercent)}%`;
   }
 }
 
-function hideLoadProgress() {
-  updateLoadProgress(100, dailyDataLoadedMessage());
-  window.setTimeout(() => loadProgress?.classList.add("hidden"), 500);
+function hideLoadProgress(taskId = loadTaskId) {
+  if (taskId !== loadTaskId) {
+    return;
+  }
+  updateLoadProgress(100, dailyDataLoadedMessage(), taskId);
+  if (loadProgressHideTimer) {
+    window.clearTimeout(loadProgressHideTimer);
+  }
+  loadProgressHideTimer = window.setTimeout(() => {
+    if (taskId === loadTaskId) {
+      loadProgress?.classList.add("hidden");
+      loadProgressHideTimer = null;
+    }
+  }, 350);
 }
 
 function getDateFilter() {
@@ -168,6 +219,11 @@ function displayValue(value) {
 function displayableText(value) {
   const text = displayValue(value);
   return text === "暂无数据" ? "" : text;
+}
+
+function hasUsableRawValue(value) {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !["nan", "nat", "none", "null", "undefined"].includes(text.toLowerCase());
 }
 
 function summaryPhrase(value, { prefix = "", suffix = "" } = {}) {
@@ -248,7 +304,6 @@ function fetchJsonWithProgress(url, onProgress) {
     const request = new XMLHttpRequest();
     request.open("GET", url, true);
     request.responseType = "text";
-    request.setRequestHeader("Cache-Control", "no-store");
     request.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {
         const percent = (event.loaded / event.total) * 100;
@@ -263,7 +318,7 @@ function fetchJsonWithProgress(url, onProgress) {
         return;
       }
       try {
-        onProgress?.(96, request.responseText.length, request.responseText.length);
+        onProgress?.(98, request.responseText.length, request.responseText.length);
         resolve(JSON.parse(request.responseText));
       } catch (error) {
         reject(new Error(`静态数据解析失败：${url}`));
@@ -272,6 +327,40 @@ function fetchJsonWithProgress(url, onProgress) {
     request.onerror = () => reject(new Error(`静态数据读取失败：${url}`));
     request.send();
   });
+}
+
+async function fetchGzipJsonWithProgress(url, onProgress) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`静态数据读取失败：${url}`);
+  }
+  if (typeof DecompressionStream !== "function") {
+    throw new Error("当前浏览器不支持压缩数据读取，请升级浏览器");
+  }
+  const total = Number(response.headers.get("content-length")) || 0;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress?.(total ? (loaded / total) * 75 : 35, loaded, total);
+  }
+  onProgress?.(82, loaded, total);
+  const blob = new Blob(chunks);
+  const magic = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+  const stream = magic[0] === 0x1f && magic[1] === 0x8b
+    ? blob.stream().pipeThrough(new DecompressionStream("gzip"))
+    : blob.stream();
+  const text = await new Response(stream).text();
+  onProgress?.(96, loaded, total);
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`静态数据解析失败：${url}`);
+  }
 }
 
 async function fetchOptionalJson(url) {
@@ -337,15 +426,9 @@ function formatDateWindow(dates = []) {
 }
 
 async function fetchDriversPayload() {
-  updateLoadProgress(4, "正在读取司机静态数据...");
+  updateLoadProgress(6, "正在读取数据索引...");
   return fetchJsonWithProgress("data/drivers.json", (percent, loaded, total) => {
-    if (total > 0) {
-      const loadedMb = loaded / 1024 / 1024;
-      const totalMb = total / 1024 / 1024;
-      updateLoadProgress(percent, `读取司机静态数据 ${Math.round(percent)}%（${loadedMb.toFixed(1)} / ${totalMb.toFixed(1)} MB）`);
-    } else {
-      updateLoadProgress(percent, "正在读取司机静态数据...");
-    }
+    updateLoadProgress(Math.min(14, 6 + percent * 0.08), "正在读取数据索引...");
   });
 }
 
@@ -360,6 +443,122 @@ function resolveDriversPayload(payload) {
   return Array.isArray(payload) ? payload : [];
 }
 
+function decodeDirectLookupPayload(payload) {
+  const schema = Array.isArray(payload?.schema) ? payload.schema : [];
+  const dictionary = payload?.dict || {};
+  return (Array.isArray(payload?.rows) ? payload.rows : []).map((row) => {
+    const raw = Object.fromEntries(schema.map((field, index) => [field, row[index]]));
+    const strategyKeys = (Array.isArray(raw.strategyKeys) ? raw.strategyKeys : [])
+      .map((index) => dictionaryValue(dictionary.strategyKeys, index))
+      .filter(Boolean);
+    return {
+      driverId: String(raw.driverId || ""),
+      city: dictionaryValue(dictionary.cities, raw.city),
+      cityLevel: dictionaryValue(dictionary.cityLevels, raw.cityLevel),
+      company: dictionaryValue(dictionary.companies, raw.company),
+      product: dictionaryValue(dictionary.products, raw.product),
+      dataDate: dictionaryValue(dictionary.dates, raw.dataDate),
+      isOrganized: dictionaryValue(dictionary.isOrganized, raw.isOrganized),
+      age: raw.age,
+      consecutive_days: raw.consecutive_days,
+      server_dur_hour: raw.server_dur_hour,
+      server_dur_hour_30d: raw.server_dur_hour_30d,
+      server_dur_sum_30d: raw.server_dur_sum_30d,
+      order_cnt_21_09_7d_rate: raw.order_cnt_21_09_7d_rate,
+      sleep_deprivation_days: raw.sleep_deprivation_days,
+      past_7_day_non_listening_period: raw.past_7_day_non_listening_period,
+      riskTierRank: raw.riskTierRank,
+      riskTierScore: raw.riskTierScore,
+      tiredScore: raw.tiredScore,
+      strategyKeys,
+      strategyEvidence: Object.fromEntries(
+        strategyKeys
+          .map((key, index) => [key, raw.strategyEvidence?.[index]])
+          .filter(([, evidence]) => evidence),
+      ),
+      directLookup: true,
+    };
+  });
+}
+
+async function loadDriverLookupIndex() {
+  if (driverLookupIndex) {
+    return driverLookupIndex;
+  }
+  try {
+    driverLookupIndex = await fetchJson("data/driver-lookup-index.json");
+  } catch (error) {
+    driverLookupIndex = null;
+  }
+  return driverLookupIndex;
+}
+
+function directLookupShard(driverId, lookupIndex) {
+  if (lookupIndex?.shardMode === "fnv1a32-modulo") {
+    const bucketCount = Number(lookupIndex.bucketCount) || 0;
+    if (!bucketCount) return "";
+    let hash = 2166136261;
+    for (const character of String(driverId || "")) {
+      hash ^= character.charCodeAt(0);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return String(hash % bucketCount);
+  }
+  const prefixLength = Number(lookupIndex?.prefixLength) || 0;
+  return String(driverId || "").slice(0, prefixLength);
+}
+
+async function findDirectDriverLocation(driverId) {
+  const taskId = loadTaskId;
+  const lookupIndex = await loadDriverLookupIndex();
+  const shard = directLookupShard(driverId, lookupIndex);
+  const filePath = lookupIndex?.files?.[shard];
+  if (!filePath) {
+    return null;
+  }
+  if (!loadedDriverLookupByPrefix.has(shard)) {
+    updateLoadProgress(10, "正在定位司机快照...", taskId);
+    loadProgress?.classList.remove("hidden");
+    const fetchLookup = filePath.endsWith(".gz") ? fetchGzipJsonWithProgress : fetchJsonWithProgress;
+    const payload = await fetchLookup(`data/${filePath}`, (percent, loaded, total) => {
+      const sizeText = total > 0 ? `（${(loaded / 1024 / 1024).toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MB）` : "";
+      updateLoadProgress(10 + percent * 0.1, `正在定位司机快照${sizeText}`, taskId);
+    });
+    if (taskId !== loadTaskId) {
+      return null;
+    }
+    loadedDriverLookupByPrefix.set(shard, decodeDirectLookupPayload(payload));
+  }
+  return loadedDriverLookupByPrefix.get(shard).find((item) => item.driverId === String(driverId)) || null;
+}
+
+function hasDirectSearchOnly(filters) {
+  if (!/^\d{6,}$/.test(String(filters.driver_id || ""))) {
+    return false;
+  }
+  return !filters.dt;
+}
+
+async function runDirectDriverSearch(driverId, requestedDate = "") {
+  const taskId = loadTaskId;
+  const location = await findDirectDriverLocation(driverId);
+  if (taskId !== loadTaskId) {
+    return false;
+  }
+  if (!location?.dataDate || (requestedDate && location.dataDate !== requestedDate)) {
+    showState("未找到该司机。请确认司机 ID 是否存在于当前数据窗口。");
+    renderList([]);
+    hideLoadProgress(taskId);
+    return true;
+  }
+  location.bestRiskTierRank = location.riskTierRank;
+  location.subtitle = [location.city, location.product, location.company].filter(Boolean).join(" · ");
+  allDrivers = [location];
+  applyFilterResults([location]);
+  hideLoadProgress(taskId);
+  return true;
+}
+
 function resolveStaticProfile(driver, ruleIndex = strategyRuleIndex) {
   if (driver?.profile) {
     return driver.profile;
@@ -369,7 +568,7 @@ function resolveStaticProfile(driver, ruleIndex = strategyRuleIndex) {
 
 async function loadStaticData() {
   setActionsEnabled(false);
-  updateLoadProgress(2, "正在读取静态快照元信息...");
+  const taskId = startLoadTask(2, "正在读取静态快照元信息...");
   const [meta, options, driversPayload, manifest, strategyRules] = await Promise.all([
     fetchJson("data/meta.json"),
     fetchJson("data/filter-options.json"),
@@ -381,8 +580,8 @@ async function loadStaticData() {
   staticManifest = manifest || {};
   strategyRuleIndex = buildStrategyRuleIndex(strategyRules || {});
   allDrivers = resolveDriversPayload(driversPayload);
+  initializeFilterWorker();
   const availableDates = Array.isArray(options.dates) ? options.dates : [];
-  const latestDate = driverDataIndex?.latestDate || availableDates[availableDates.length - 1] || "";
   const sourceDates = Array.isArray(staticManifest.actual_dates) && staticManifest.actual_dates.length
     ? staticManifest.actual_dates
     : staticMeta.data_dates;
@@ -424,12 +623,67 @@ async function loadStaticData() {
   });
   setDateFilter("");
   renderDatePicker([], getDateFilter());
-  if (latestDate) {
-    await ensureDriversForDate(latestDate);
-  }
   staticDataReady = true;
   setActionsEnabled(true);
-  hideLoadProgress();
+  hideLoadProgress(taskId);
+}
+
+function initializeFilterWorker() {
+  if (!window.Worker || filterWorker) {
+    return filterWorkerStartup;
+  }
+  filterWorkerStartup = new Promise((resolve, reject) => {
+    filterWorker = new Worker("filter-worker.js?v=20260713-performance-v3");
+    filterWorker.addEventListener("message", (event) => {
+      const message = event.data || {};
+      if (message.type === "ready") {
+        filterWorkerReady = true;
+        filterWorkerWaitTaskId = 0;
+        resolve();
+        return;
+      }
+      if (message.type === "startup-progress") {
+        if (!filterWorkerWaitTaskId || filterWorkerWaitTaskId !== loadTaskId) {
+          return;
+        }
+        updateLoadProgress(message.percent, message.message, filterWorkerWaitTaskId);
+        return;
+      }
+      if (message.type === "result") {
+        const pending = pendingFilterRequests.get(message.requestId);
+        pendingFilterRequests.delete(message.requestId);
+        pending?.resolve({ rows: message.rows || [], totalCount: message.totalCount });
+        return;
+      }
+      if (message.type === "error") {
+        const error = new Error(message.message);
+        pendingFilterRequests.forEach(({ reject: rejectPending }) => rejectPending(error));
+        pendingFilterRequests.clear();
+        filterWorker = null;
+        reject(error);
+      }
+    });
+    filterWorker.addEventListener("error", () => {
+      const error = new Error("筛选加速器启动失败");
+      pendingFilterRequests.forEach(({ reject: rejectPending }) => rejectPending(error));
+      pendingFilterRequests.clear();
+      filterWorker = null;
+      reject(error);
+    });
+    filterWorker.postMessage({ type: "init", url: "data/filter-index.json.gz" });
+  });
+  return filterWorkerStartup;
+}
+
+function filterWithWorker(filters, limit = 5000) {
+  if (!filterWorker || !filterWorkerReady) {
+    return null;
+  }
+  const requestId = ++filterRequestId;
+  return new Promise((resolve, reject) => {
+    pendingFilterRequests.set(requestId, { resolve, reject });
+    filterWorker.postMessage({ type: "filter", requestId, filters, limit });
+  });
 }
 
 function dailyFileForDate(dataDate) {
@@ -437,18 +691,21 @@ function dailyFileForDate(dataDate) {
   return file?.path || `daily/drivers-${dataDate}.json`;
 }
 
-async function ensureDriversForDate(dataDate) {
+async function ensureDriversForDate(dataDate, { onProgress } = {}) {
   if (!driverDataIndex || !dataDate) {
     return;
   }
   if (loadedDriversByDate.has(dataDate)) {
     allDrivers = loadedDriversByDate.get(dataDate);
+    onProgress?.(100, 0, 0);
     return;
   }
   const filePath = dailyFileForDate(dataDate);
-  updateLoadProgress(8, loadingDailyDataMessage());
-  loadProgress?.classList.remove("hidden");
   const payload = await fetchJsonWithProgress(`data/${filePath}`, (percent, loaded, total) => {
+    if (onProgress) {
+      onProgress(percent, loaded, total);
+      return;
+    }
     if (total > 0) {
       const loadedMb = loaded / 1024 / 1024;
       const totalMb = total / 1024 / 1024;
@@ -460,7 +717,36 @@ async function ensureDriversForDate(dataDate) {
   const drivers = resolveDailyDriversPayload(payload);
   loadedDriversByDate.set(dataDate, drivers);
   allDrivers = drivers;
-  updateLoadProgress(100, dailyDataLoadedMessage());
+  if (onProgress) {
+    onProgress(100, 0, 0);
+  } else {
+    updateLoadProgress(100, dailyDataLoadedMessage());
+  }
+}
+
+async function loadDriverDates(dates, { startPercent = 8, endPercent = 96, label = "正在读取数据" } = {}) {
+  const pendingDates = (Array.isArray(dates) ? dates : []).filter(
+    (dataDate) => dataDate && !loadedDriversByDate.has(dataDate),
+  );
+  if (!pendingDates.length) {
+    return;
+  }
+
+  loadProgress?.classList.remove("hidden");
+  updateLoadProgress(startPercent, `${label} 0/${pendingDates.length}`);
+  for (let index = 0; index < pendingDates.length; index += 1) {
+    const dataDate = pendingDates[index];
+    await ensureDriversForDate(dataDate, {
+      onProgress: (filePercent, loaded, total) => {
+        const completion = (index + Math.min(100, Math.max(0, filePercent)) / 100) / pendingDates.length;
+        const overallPercent = startPercent + (endPercent - startPercent) * completion;
+        const fileInfo = total > 0
+          ? `（${(loaded / 1024 / 1024).toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MB）`
+          : "";
+        updateLoadProgress(overallPercent, `${label} ${index + 1}/${pendingDates.length}${fileInfo}`);
+      },
+    });
+  }
 }
 
 function resolveDailyDriversPayload(payload) {
@@ -488,6 +774,27 @@ function decodeCompactDailyPayload(payload) {
     product: "products",
     isOrganized: "isOrganized",
   };
+  const availableFields = new Set();
+  schema.forEach((field, index) => {
+    if (field === "strategyEvidence") {
+      return;
+    }
+    if (field in dictFields) {
+      if (Array.isArray(dict[dictFields[field]]) && dict[dictFields[field]].length) {
+        availableFields.add(field);
+      }
+      return;
+    }
+    if (field === "strategyKeys") {
+      if (Array.isArray(dict.strategyKeys) && dict.strategyKeys.length) {
+        availableFields.add(field);
+      }
+      return;
+    }
+    if (rows.some((row) => hasUsableRawValue(row[index]))) {
+      availableFields.add(field);
+    }
+  });
   return rows.map((row) => {
     const raw = Object.fromEntries(schema.map((field, index) => [field, row[index]]));
     const driver = {};
@@ -515,6 +822,10 @@ function decodeCompactDailyPayload(payload) {
       driver.strategyEvidence = evidence;
     }
     driver.subtitle = [driver.city, driver.product, driver.company].filter(Boolean).join(" · ");
+    Object.defineProperty(driver, "__availableFields", {
+      value: availableFields,
+      enumerable: false,
+    });
     return driver;
   });
 }
@@ -537,20 +848,6 @@ function rankNumber(value) {
 function scoreNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : -Infinity;
-}
-
-function tiredRiskLevel(value) {
-  const score = scoreNumber(value);
-  if (score === -Infinity) {
-    return { key: "unknown", label: "疲劳暂无", badgeClass: "badge-num" };
-  }
-  if (score > 25) {
-    return { key: "high", label: "疲劳高", badgeClass: "badge-high" };
-  }
-  if (score >= 15) {
-    return { key: "mid", label: "疲劳中", badgeClass: "badge-mid" };
-  }
-  return { key: "low", label: "疲劳低", badgeClass: "badge-low" };
 }
 
 function strategyHitCount(driver) {
@@ -644,12 +941,51 @@ async function ensureDriversForFilters(filters) {
     return;
   }
   const dates = driverDataIndex.dates || [];
+  await loadDriverDates(dates, {
+    startPercent: 6,
+    endPercent: 94,
+    label: "正在读取近7天数据",
+  });
   const all = [];
-  for (const dataDate of dates) {
-    await ensureDriversForDate(dataDate);
-    appendDriverRows(all, loadedDriversByDate.get(dataDate) || []);
-  }
+  dates.forEach((dataDate) => appendDriverRows(all, loadedDriversByDate.get(dataDate) || []));
   allDrivers = deduplicateBestRankedDrivers(all);
+}
+
+async function filteredDriversForQuery(filters, { limit = 5000 } = {}) {
+  const taskId = loadTaskId;
+  if (!filterWorkerReady && filterWorkerStartup) {
+    filterWorkerWaitTaskId = taskId;
+    try {
+      await filterWorkerStartup;
+    } catch (error) {
+      // Older CDN releases can still fall back to the legacy daily-file path.
+    }
+    if (filterWorkerWaitTaskId === taskId) {
+      filterWorkerWaitTaskId = 0;
+    }
+    if (taskId !== loadTaskId) {
+      return null;
+    }
+  }
+  const workerResult = filterWithWorker(filters, limit);
+  if (workerResult) {
+    loadProgress?.classList.remove("hidden");
+    updateLoadProgress(25, "正在快速筛选近7天数据...", taskId);
+    const result = await workerResult;
+    if (taskId !== loadTaskId) {
+      return null;
+    }
+    updateLoadProgress(92, "正在整理筛选结果...", taskId);
+    const rows = (result.rows || []).map((driver) => ({
+      ...driver,
+      subtitle: [driver.city, driver.product, driver.company].filter(Boolean).join(" · "),
+      filterIndex: true,
+    }));
+    rows.matchCount = result.totalCount ?? rows.length;
+    return rows;
+  }
+  await ensureDriversForFilters(filters);
+  return taskId === loadTaskId ? filteredDrivers(filters, allDrivers.length) : null;
 }
 
 function sortByPinyin(options) {
@@ -971,26 +1307,6 @@ function filtersSummary(filters = currentFilters()) {
   return parts.length ? parts.join("；") : "无筛选条件";
 }
 
-function contactStorageKey(driver) {
-  return `${driver.driverId || ""}::${driver.dataDate || ""}`;
-}
-
-function contactStatusForDriver(driver) {
-  const statusMap = readJsonStorage(contactStatusStorageKey, {});
-  return statusMap[contactStorageKey(driver)] || "pending";
-}
-
-function setContactStatusForDriver(driver, status) {
-  const statusMap = readJsonStorage(contactStatusStorageKey, {});
-  statusMap[contactStorageKey(driver)] = status;
-  writeJsonStorage(contactStatusStorageKey, statusMap);
-}
-
-function nextContactStatus(currentStatus) {
-  const index = contactStatusFlow.indexOf(currentStatus);
-  return contactStatusFlow[(index + 1) % contactStatusFlow.length] || contactStatusFlow[0];
-}
-
 function logLocalAudit(action, detail = {}) {
   const logs = readJsonStorage(accessLogStorageKey, []);
   logs.unshift({
@@ -1201,9 +1517,7 @@ function appendDriverCards(drivers) {
   const activeKey = activeDriverKey();
   drivers.forEach((driver) => {
     const item = document.createElement("div");
-    const tiredRisk = tiredRiskLevel(driver.tiredScore);
     const strategyCount = strategyHitCount(driver);
-    const contactStatus = contactStatusForDriver(driver);
     item.className = `driver-card${driverKey(driver) === activeKey ? " active" : ""}`;
     item.dataset.driverKey = driverKey(driver);
     item.setAttribute("role", "button");
@@ -1215,7 +1529,6 @@ function appendDriverCards(drivers) {
         <div class="driver-sub">${escapeHtml(driver.subtitle || "暂无基础信息")}</div>
         <div class="driver-tags">
           <span class="badge badge-strategy">策略 ${escapeHtml(strategyCount)}</span>
-          <span class="badge ${escapeHtml(tiredRisk.badgeClass)}">${escapeHtml(tiredRisk.label)}</span>
         </div>
       </div>
       <div class="driver-metrics">
@@ -1223,7 +1536,6 @@ function appendDriverCards(drivers) {
           <span class="badge badge-num">排名 ${escapeHtml(displayValue(driver.bestRiskTierRank || driver.riskTierRank))}</span>
         </div>
         <div class="metric-label">风险 ${escapeHtml(displayValue(driver.riskTierScore))} · 疲劳 ${escapeHtml(displayValue(driver.tiredScore))}</div>
-        <button class="contact-status contact-status-${escapeHtml(contactStatus)}" type="button" data-contact-status="true">${escapeHtml(contactStatusLabels[contactStatus] || "待联系")}</button>
       </div>`;
     item.addEventListener("click", () => loadProfile(driver));
     item.addEventListener("keydown", (event) => {
@@ -1231,18 +1543,6 @@ function appendDriverCards(drivers) {
         event.preventDefault();
         loadProfile(driver);
       }
-    });
-    item.querySelector("[data-contact-status]")?.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const nextStatus = nextContactStatus(contactStatusForDriver(driver));
-      setContactStatusForDriver(driver, nextStatus);
-      logLocalAudit("contact_status", {
-        driverId: driver.driverId,
-        dataDate: driver.dataDate,
-        status: contactStatusLabels[nextStatus] || nextStatus,
-      });
-      item.querySelector("[data-contact-status]").className = `contact-status contact-status-${nextStatus}`;
-      item.querySelector("[data-contact-status]").textContent = contactStatusLabels[nextStatus] || "待联系";
     });
     listEl.appendChild(item);
   });
@@ -1287,7 +1587,8 @@ function renderList(drivers, options = {}) {
   }
   const summary = document.createElement("div");
   summary.className = "list-summary";
-  summary.textContent = `匹配 ${drivers.length} 位司机，当前显示 ${Math.min(listPageSize, drivers.length)} 位`;
+  const matchCount = Number(drivers.matchCount) || drivers.length;
+  summary.textContent = `匹配 ${matchCount} 位司机，当前显示 ${Math.min(listPageSize, drivers.length)} 位`;
   listEl.appendChild(summary);
   renderMoreListItems();
 }
@@ -1307,10 +1608,14 @@ function renderMoreListItems() {
   }
   const summary = listEl.querySelector(".list-summary");
   if (summary) {
+    const matchCount = Number(currentListRows.matchCount) || currentListRows.length;
     const percent = currentListRows.length
       ? Math.round((renderedListCount / currentListRows.length) * 100)
       : 0;
-    summary.textContent = `匹配 ${currentListRows.length} 位司机，当前显示 ${renderedListCount} 位（${percent}%）`;
+    const cappedText = matchCount > currentListRows.length
+      ? `，列表优先展示前 ${currentListRows.length} 位`
+      : `（${percent}%）`;
+    summary.textContent = `匹配 ${matchCount} 位司机，当前显示 ${renderedListCount} 位${cappedText}`;
   }
 }
 
@@ -1328,7 +1633,7 @@ function showFirstMatchedProfile(rows) {
 
 function applyFilterResults(rows) {
   if (!rows.length) {
-    const hints = zeroResultHints(currentFilters());
+    const hints = filterWorkerReady ? [] : zeroResultHints(currentFilters());
     const hintHtml = hints.length
       ? `<div class="empty-title-small">当前条件没有匹配司机</div><div class="empty-hints">${hints
           .map((hint) => `<div>去掉「${escapeHtml(hint.label)}」后约有 ${escapeHtml(hint.count)} 位匹配</div>`)
@@ -1339,6 +1644,10 @@ function applyFilterResults(rows) {
     return;
   }
   renderList(rows);
+  if (rows[0]?.filterIndex) {
+    showState(`已筛出 ${Number(rows.matchCount) || rows.length} 位司机。点击左侧名单中的司机，按需读取详细画像。`);
+    return;
+  }
   try {
     loadProfile(rows[0]);
   } catch (error) {
@@ -1347,7 +1656,8 @@ function applyFilterResults(rows) {
 }
 
 function renderFieldList(items) {
-  return `<div class="field-list">${items
+  const visibleItems = (Array.isArray(items) ? items : []).filter((item) => !item.hidden);
+  return `<div class="field-list">${visibleItems
     .map(
       (item) => `
     <div class="field-item">
@@ -1386,7 +1696,7 @@ function buildStrategyRuleIndex(config = {}) {
     translation: {
       driver_script: "师傅您好，例行关心一下您最近的出车和休息情况。请注意合理安排作息，感觉疲劳或身体不舒服时先休息。",
       action_advice: "可做常规状态确认，提醒保持安全驾驶、合理休息和规律作息。",
-      communication_tip: "常规关怀即可，不需要强调风险。",
+      communication_tip: "避免堆叠风险标签、说教或作出无法兑现的承诺；以感谢、关心和开放式提问为主，司机抵触时礼貌收尾，不强劝。",
     },
     priority: 999,
   };
@@ -1411,7 +1721,7 @@ function resolveTranslation(rawTranslation = {}, context = {}, fallbackAdvice = 
     context,
   );
   const communicationTip = replaceTemplate(
-    translation.communication_tip || "保持关怀表达，不提内部指标。",
+      translation.communication_tip || "避免恐吓、命令、诊断式表达或无法兑现的承诺；先听司机感受，再用商量口吻给出可选择的建议。",
     context,
   );
   return {
@@ -1522,6 +1832,9 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
   const firstEvidence = evidenceItems[0] || {};
   const firstCondition = conditionForMetric(rule, firstEvidence.driverMetric) || {};
   const matchedEvidence = evidenceTextForItems(rule, evidenceItems);
+  const missingEvidenceNote = driver.directLookup
+    ? "快速查询已定位策略命中；完整内部依据需在组合筛选后查看"
+    : "暂无可展示依据";
   const thresholdOperator = firstCondition.threshold?.operator || rule.threshold?.operator || ">";
   const context = {
     driver_value: formatMetricValue(firstEvidence.driverValue),
@@ -1529,7 +1842,7 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
     threshold_relation: thresholdRelationLabel(thresholdOperator),
     unit: firstCondition.unit || rule.unit || "",
     driver_metric_label: firstCondition.driver_metric_label || rule.driver_metric_label || "",
-    matched_evidence: matchedEvidence || "暂无可展示依据",
+    matched_evidence: matchedEvidence || missingEvidenceNote,
     data_date: driver.dataDate || "",
   };
   return {
@@ -1539,7 +1852,9 @@ function renderStrategyFromRule(key, driver, ruleIndex) {
     priority: rule.priority || 999,
     priority_tier: rule.priority_tier || "",
     badges: Array.isArray(rule.badges) ? rule.badges : [],
-    evidence: replaceTemplate(rule.evidence_template || "{{matched_evidence}}。", context),
+    evidence: matchedEvidence
+      ? replaceTemplate(rule.evidence_template || "{{matched_evidence}}。", context)
+      : missingEvidenceNote,
     advice: replaceTemplate(rule.advice_template || "可做常规状态确认，保持关怀式沟通。", context),
     translation: resolveTranslation(
       rule.translation,
@@ -1633,23 +1948,25 @@ function renderStrategies(strategies = []) {
       )
       .join("")}</div>`;
   };
-  const renderTranslation = (strategy) => {
+  const renderInternalGuidance = (strategy) => {
     const translation = resolveTranslation(strategy.translation, {}, strategy.advice);
     return `
-      <div class="strategy-translation">
-        <div class="speech-block speech-primary">
-          <span>对外话术</span>
-          <p>${escapeHtml(translation.driver_script)}</p>
-        </div>
-        <div class="speech-block">
-          <span>可操作建议</span>
-          <p>${escapeHtml(translation.action_advice)}</p>
-        </div>
-        <div class="communication-note">
+      <div class="strategy-internal">
+        <div class="communication-note communication-note-strong">
           <span>沟通提醒</span>
           <p>${escapeHtml(translation.communication_tip)}</p>
         </div>
-        <button class="strategy-copy" type="button" data-copy-strategy="true" data-copy-text="${escapeHtml(translation.copy_text)}">复制话术</button>
+        <details class="strategy-internal-details">
+          <summary>查看内部信息</summary>
+          <div class="internal-block">
+            <span>内部依据</span>
+            <p>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</p>
+          </div>
+          <div class="internal-block">
+            <span>内部建议</span>
+            <p>${escapeHtml(strategy.advice || "可做常规状态确认，保持关怀式沟通。")}</p>
+          </div>
+        </details>
       </div>`;
   };
   const priorityMetas = priorityMetasForStrategies(items);
@@ -1666,19 +1983,73 @@ function renderStrategies(strategies = []) {
             <h3>${escapeHtml(strategy.title || "常规关怀")}</h3>
             ${renderBadges(badges)}
           </div>
-          ${renderTranslation(strategy)}
-          <details class="strategy-reference">
-            <summary>参考依据</summary>
-            <dl>
-              <dt>内部依据</dt>
-              <dd>${escapeHtml(strategy.evidence || strategy.reason || "暂无可展示依据")}</dd>
-              <dt>内部建议</dt>
-              <dd>${escapeHtml(strategy.advice || "可做常规状态确认，保持关怀式沟通。")}</dd>
-            </dl>
-          </details>
+          ${renderInternalGuidance(strategy)}
         </article>`;
     })
     .join("")}</section>`;
+}
+
+function renderSpeechTemplates(strategies = []) {
+  const items = strategies.length
+    ? strategies
+    : [
+        {
+          title: "常规关怀",
+          advice: "可做常规状态确认，提醒司机保持安全驾驶、合理休息和规律作息。",
+          translation: resolveTranslation(),
+        },
+      ];
+  const visibleItems = items.filter((strategy) => strategy?.key !== "regular-care").slice(0, 6);
+  const speechItems = visibleItems.length ? visibleItems : items.slice(0, 1);
+  const titles = speechItems
+    .map((strategy) => strategy.title)
+    .filter(Boolean)
+    .slice(0, 6);
+  const normalizeAdvicePhrase = (value) => String(value || "")
+    .trim()
+    .replace(/[。；;，,、.!！？?]+$/g, "");
+  const adviceCategories = new Set();
+  const advices = speechItems.reduce((items, strategy) => {
+    const category = strategy.category || strategy.key || "general";
+    if (adviceCategories.has(category)) {
+      return items;
+    }
+    const advice = normalizeAdvicePhrase(
+      resolveTranslation(strategy.translation, {}, strategy.advice).action_advice,
+    );
+    if (advice) {
+      adviceCategories.add(category);
+      items.push(advice);
+    }
+    return items;
+  }, []).slice(0, 4);
+  const focusText = titles.length
+    ? `我们这边看到您近期有一些需要关注的情况，主要是${titles.join("、")}。这些信息只是基于平台数据做的关怀提醒，不是批评您，也不替代医生判断。`
+    : "今天联系您主要是做一次常规关怀，想了解一下您最近的出车和休息情况。";
+  const adviceText = advices.length
+    ? `如果方便的话，建议您可以先考虑：${advices.join("；")}。这些建议不用一次全部做到，可以先选一项现在比较容易调整的。`
+    : "如果感觉疲劳或身体不舒服，建议先休息再继续出车，尽量保持规律作息。";
+  const fullSpeech = [
+    "师傅您好，我是平台安全关怀客服，今天联系您主要是想关心一下您最近的出车和身体状态，请问现在方便简单聊两句吗？",
+    focusText,
+    "很多师傅都很辛苦，我们也理解跑车有现实压力，所以今天只是想跟您确认一下实际感受，看看最近有没有休息不足、犯困或身体不舒服的情况。",
+    adviceText,
+    "感谢您愿意听我说这些。希望您后续出车平安，也多照顾好自己的身体。",
+  ].join("\n\n");
+  return `
+    <section class="speech-template-list">
+      <article class="speech-template speech-template-combined">
+        <div class="speech-template-heading">
+          <div>
+            <h3>综合关怀话术</h3>
+            <p>${escapeHtml(titles.length ? titles.join(" / ") : "常规关怀")}</p>
+          </div>
+          <button class="strategy-copy" type="button" data-copy-strategy="true" data-copy-text="${escapeHtml(fullSpeech)}">复制话术</button>
+        </div>
+        <p class="speech-template-text">${escapeHtml(fullSpeech)}</p>
+        <p class="speech-template-footnote">话术仅供客服参考，请结合司机实际回应灵活调整，避免直接照读内部指标或做医学判断。</p>
+      </article>
+    </section>`;
 }
 
 async function copyStrategySpeech(button) {
@@ -1713,8 +2084,38 @@ async function copyStrategySpeech(button) {
   }
 }
 
+function driverHasField(driver, ...fieldNames) {
+  const availableFields = driver?.__availableFields;
+  if (availableFields instanceof Set) {
+    return fieldNames.some((fieldName) => availableFields.has(fieldName));
+  }
+  return fieldNames.some((fieldName) => Object.prototype.hasOwnProperty.call(driver || {}, fieldName));
+}
+
+function firstAvailableValue(driver, ...fieldNames) {
+  for (const fieldName of fieldNames) {
+    if (driverHasField(driver, fieldName) && hasUsableRawValue(driver?.[fieldName])) {
+      return driver[fieldName];
+    }
+  }
+  for (const fieldName of fieldNames) {
+    if (driverHasField(driver, fieldName)) {
+      return driver?.[fieldName];
+    }
+  }
+  return undefined;
+}
+
 function field(label, value) {
   return { displayLabel: label, displayValue: displayValue(value) };
+}
+
+function profileField(driver, label, fieldNames, value = firstAvailableValue(driver, ...fieldNames)) {
+  return {
+    displayLabel: label,
+    displayValue: displayValue(value),
+    hidden: !driverHasField(driver, ...fieldNames),
+  };
 }
 
 function headerChipsForDriver(driver, strategies = []) {
@@ -1760,7 +2161,7 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
       syncStatus: "静态快照",
     },
     header: {
-      title: "司机画像",
+      title: "风险前哨",
       subtitle: conciseProfileSubtitle(driver),
       chips: headerChipsForDriver(driver, strategies),
     },
@@ -1770,60 +2171,60 @@ function buildProfileFromDriver(driver, ruleIndex = strategyRuleIndex) {
         key: "basic",
         title: "基础资料",
         items: [
-          field("城市 resident_city_name", driver.city),
-          field("城市等级 city_level", driver.cityLevel),
-          field("公司 company_name", driver.company),
-          field("产品线 product_level2_name", driver.product),
-          field("年龄 age", driver.age),
-          field("是否组织化 is_organized", normalizeBooleanLabel(driver.isOrganized)),
-          field("近七天最高排名 risk_tier_rank", driver.bestRiskTierRank || driver.riskTierRank),
+          profileField(driver, "城市 resident_city_name", ["city"]),
+          profileField(driver, "城市等级 city_level", ["cityLevel"]),
+          profileField(driver, "公司 company_name", ["company"]),
+          profileField(driver, "产品线 product_level2_name", ["product"]),
+          profileField(driver, "年龄 age", ["age"]),
+          profileField(driver, "是否组织化 is_organized", ["isOrganized"], normalizeBooleanLabel(driver.isOrganized)),
+          profileField(driver, "近七天最高排名 risk_tier_rank", ["bestRiskTierRank", "riskTierRank"], driver.bestRiskTierRank || driver.riskTierRank),
         ],
       },
       {
         key: "workload",
         title: "出车/服务指标",
         items: [
-          field("连续出车天数 consecutive_days", driver.consecutive_days),
-          field("最高连日出车天数 consecutive_days_max", driver.consecutive_days_max),
-          field("当日在线时长 online_dur_hour", driver.online_dur_hour),
-          field("当日服务时长 server_dur_hour", driver.server_dur_hour),
-          field("近7日非预约单在线时长 lately_7d_except_sub_online_dur_hour", driver.lately_7d_except_sub_online_dur_hour),
-          field("近30天服务时长 server_dur_hour_30d", driver.server_dur_hour_30d || driver.server_dur_sum_30d),
-          field("近30天在线时长 lately_30d_online_dur_hour", driver.lately_30d_online_dur_hour),
-          field("是否长期连日出车 is_long_consecutive", driver.is_long_consecutive),
+          profileField(driver, "连续出车天数 consecutive_days", ["consecutive_days"]),
+          profileField(driver, "最高连日出车天数 consecutive_days_max", ["consecutive_days_max"]),
+          profileField(driver, "当日在线时长 online_dur_hour", ["online_dur_hour"]),
+          profileField(driver, "当日服务时长 server_dur_hour", ["server_dur_hour"]),
+          profileField(driver, "近7日非预约单在线时长 lately_7d_except_sub_online_dur_hour", ["lately_7d_except_sub_online_dur_hour"]),
+          profileField(driver, "近30天服务时长 server_dur_hour_30d", ["server_dur_hour_30d", "server_dur_sum_30d"]),
+          profileField(driver, "近30天在线时长 lately_30d_online_dur_hour", ["lately_30d_online_dur_hour"]),
+          profileField(driver, "是否长期连日出车 is_long_consecutive", ["is_long_consecutive"]),
         ],
       },
       {
         key: "fatigue",
         title: "疲劳相关",
         items: [
-          field("夜间出车占比 order_cnt_21_09_7d_rate", driver.order_cnt_21_09_7d_rate),
-          field("是否常规夜班司机 is_regular_night", driver.is_regular_night),
-          field("睡眠不足天数 sleep_deprivation_days", driver.sleep_deprivation_days),
-          field("是否睡眠不足 is_sleep_deprived", driver.is_sleep_deprived),
-          field("是否突然累 is_sudden_fatigue", driver.is_sudden_fatigue),
-          field("近7天非听单时段 past_7_day_non_listening_period", driver.past_7_day_non_listening_period),
-          field("疲劳分 tired_score", driver.tiredScore),
-          field("近7天最高劳累指数 fatigue_index_7d", driver.fatigue_index_7d),
-          field("最大疲劳风险分 max_improved_tired_risk_score", driver.max_improved_tired_risk_score),
+          profileField(driver, "夜间出车占比 order_cnt_21_09_7d_rate", ["order_cnt_21_09_7d_rate"]),
+          profileField(driver, "是否常规夜班司机 is_regular_night", ["is_regular_night"]),
+          profileField(driver, "睡眠不足天数 sleep_deprivation_days", ["sleep_deprivation_days"]),
+          profileField(driver, "是否睡眠不足 is_sleep_deprived", ["is_sleep_deprived"]),
+          profileField(driver, "是否突然累 is_sudden_fatigue", ["is_sudden_fatigue"]),
+          profileField(driver, "近7天非听单时段 past_7_day_non_listening_period", ["past_7_day_non_listening_period"]),
+          profileField(driver, "疲劳分 tired_score", ["tiredScore", "tired_score"], driver.tiredScore),
+          profileField(driver, "近7天最高劳累指数 fatigue_index_7d", ["fatigue_index_7d"]),
+          profileField(driver, "最大疲劳风险分 max_improved_tired_risk_score", ["max_improved_tired_risk_score"]),
         ],
       },
       {
         key: "health",
         title: "健康相关",
         items: [
-          field("测量高压 high_pressure", driver.high_pressure),
-          field("测量低压 diastolic_bp_measure", driver.diastolic_bp_measure || driver.low_pressure),
-          field("健康拍高压 systolic_bp_health", driver.systolic_bp_health),
-          field("身体基础系数 body_base_coeff", driver.body_base_coeff),
-          field("身体风险因子 body_risk_factor", driver.body_risk_factor),
-          field("血糖风险值 hyperglycemia_value", driver.hyperglycemia_value),
-          field("血脂风险值 hyperlipidemia_value", driver.hyperlipidemia_value),
-          field("整体血压风险 bp_risk_overall", driver.bp_risk_overall),
-          field("是否高血压 is_hypertension_flag", driver.is_hypertension_flag),
-          field("自评高血压 self_high_bp", driver.self_high_bp),
-          field("自评高血糖 self_high_blood_sugar", driver.self_high_blood_sugar),
-          field("自评高血脂 self_high_blood_lipid", driver.self_high_blood_lipid),
+          profileField(driver, "测量高压 high_pressure", ["high_pressure"]),
+          profileField(driver, "测量低压 diastolic_bp_measure", ["diastolic_bp_measure", "low_pressure"]),
+          profileField(driver, "健康拍高压 systolic_bp_health", ["systolic_bp_health"]),
+          profileField(driver, "身体基础系数 body_base_coeff", ["body_base_coeff"]),
+          profileField(driver, "身体风险因子 body_risk_factor", ["body_risk_factor"]),
+          profileField(driver, "血糖风险值 hyperglycemia_value", ["hyperglycemia_value"]),
+          profileField(driver, "血脂风险值 hyperlipidemia_value", ["hyperlipidemia_value"]),
+          profileField(driver, "整体血压风险 bp_risk_overall", ["bp_risk_overall"]),
+          profileField(driver, "是否高血压 is_hypertension_flag", ["is_hypertension_flag"]),
+          profileField(driver, "自评高血压 self_high_bp", ["self_high_bp"]),
+          profileField(driver, "自评高血糖 self_high_blood_sugar", ["self_high_blood_sugar"]),
+          profileField(driver, "自评高血脂 self_high_blood_lipid", ["self_high_blood_lipid"]),
         ],
       },
     ],
@@ -1848,42 +2249,37 @@ function renderSourceMeta(profile) {
 
 function renderProfile(profile) {
   profileEl.innerHTML = `
-    <header class="profile-header">
-      <div class="profile-top profile-title">
-        <div>
-          <div class="profile-id-row">
-            <div class="profile-avatar">${escapeHtml(profileAvatarLabel())}</div>
+    <div class="profile-workspace">
+      <section class="profile-main-column">
+        <header class="profile-header">
+          <div class="profile-top profile-title">
             <div>
-              <p class="profile-kicker">${escapeHtml(profile.header.title)} · ${escapeHtml(profile.meta.dataDate || profile.source?.dataDate || "暂无日期")} 快照</p>
-              <h2 class="profile-id">司机ID ${escapeHtml(profile.driverId)}</h2>
-              <p class="profile-sub">${escapeHtml(profile.header.subtitle || "")}</p>
+              <div class="profile-id-row">
+                <div class="profile-avatar">${escapeHtml(profileAvatarLabel())}</div>
+                <div>
+                  <p class="profile-kicker">${escapeHtml(profile.header.title)} · ${escapeHtml(profile.meta.dataDate || profile.source?.dataDate || "暂无日期")} 快照</p>
+                  <h2 class="profile-id">司机ID ${escapeHtml(profile.driverId)}</h2>
+                  <p class="profile-sub">${escapeHtml(profile.header.subtitle || "")}</p>
+                </div>
+              </div>
+              ${renderHeaderChips(profile.header.chips)}
             </div>
+            <div class="risk-box"><span class="label">近七天最高排名</span><b class="value">${escapeHtml(profile.meta.bestRiskTierRank || profile.meta.riskTierRank || "暂无数据")}</b></div>
           </div>
-          ${renderHeaderChips(profile.header.chips)}
-        </div>
-        <div class="risk-box"><span class="label">近七天最高排名</span><b class="value">${escapeHtml(profile.meta.bestRiskTierRank || profile.meta.riskTierRank || "暂无数据")}</b></div>
-      </div>
-      ${renderSourceMeta(profile)}
-    </header>
-    ${renderSectionTitle(1, "综合画像")}
-    <section class="summary">
-      <p>${escapeHtml(profile.summary)}</p>
-    </section>
-    ${renderSectionTitle(2, "建议策略")}
-    ${renderStrategies(Array.isArray(profile.strategies) ? profile.strategies : [])}
-    ${renderSectionTitle(3, "司机资料")}
-    <section class="cards-grid">
-      ${profile.groups
-        .filter((group) => group.key !== "summary")
-        .map(
-          (group) => `
-        <article class="info-card">
-          <h3>${escapeHtml(group.title)}</h3>
-          ${renderFieldList(group.items)}
-        </article>`,
-        )
-        .join("")}
-    </section>
+          ${renderSourceMeta(profile)}
+        </header>
+        ${renderSectionTitle(1, "综合画像")}
+        <section class="summary">
+          <p>${escapeHtml(profile.summary)}</p>
+        </section>
+        ${renderSectionTitle(2, "话术指导")}
+        ${renderSpeechTemplates(Array.isArray(profile.strategies) ? profile.strategies : [])}
+      </section>
+      <aside class="strategy-side-column">
+        ${renderSectionTitle(3, "建议策略")}
+        ${renderStrategies(Array.isArray(profile.strategies) ? profile.strategies : [])}
+      </aside>
+    </div>
   `;
   stateBox.classList.add("hidden");
   stateBox.classList.remove("empty-state");
@@ -1912,7 +2308,7 @@ function findBestDriver(driverId, dt = "") {
 }
 
 async function loadProfile(driverOrId, dt = "") {
-  const driver = typeof driverOrId === "object" ? driverOrId : findBestDriver(driverOrId, dt);
+  let driver = typeof driverOrId === "object" ? driverOrId : findBestDriver(driverOrId, dt);
   const driverId = typeof driverOrId === "object" ? driverOrId.driverId : driverOrId;
   if (!driverId || !/^\d+$/.test(String(driverId))) {
     showState("请输入纯数字司机ID。");
@@ -1924,6 +2320,31 @@ async function loadProfile(driverOrId, dt = "") {
   }
   showState("正在打开静态司机档案...");
   try {
+    if (driver.filterIndex && driver.dataDate) {
+      const taskId = startLoadTask(12, "正在定位该司机的详细画像...");
+      const directDriver = await findDirectDriverLocation(driver.driverId);
+      if (taskId !== loadTaskId) {
+        return;
+      }
+      if (getDateFilter() && directDriver?.dataDate !== driver.dataDate) {
+        updateLoadProgress(24, "正在读取所选日期的详细画像...", taskId);
+        await ensureDriversForDate(driver.dataDate, {
+          onProgress: (percent, loaded, total) => {
+            const sizeText = total > 0
+              ? `（${(loaded / 1024 / 1024).toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MB）`
+              : "";
+            updateLoadProgress(24 + percent * 0.68, `正在读取所选日期的详细画像${sizeText}`, taskId);
+          },
+        });
+        if (taskId !== loadTaskId) return;
+        driver = (loadedDriversByDate.get(driver.dataDate) || []).find(
+          (item) => String(item.driverId) === String(driver.driverId),
+        ) || driver;
+      } else {
+        driver = directDriver || driver;
+      }
+      hideLoadProgress(taskId);
+    }
     renderProfile(resolveStaticProfile(driver));
   } catch (error) {
     showState(error.message);
@@ -1952,7 +2373,7 @@ function downloadCsv(rows) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `司机画像_筛选结果_${compactTimestamp()}.csv`;
+  link.download = `风险前哨_筛选结果_${compactTimestamp()}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -1980,14 +2401,18 @@ async function downloadCurrentFilter() {
     renderList([]);
     return;
   }
-  await ensureDriversForFilters(filters);
-  const rows = filteredDrivers(filters, allDrivers.length);
-  if (!rows.length) {
-    showState("当前条件没有可导出的司机。");
+  const taskId = startLoadTask(4, "正在准备导出名单...");
+  const rows = await filteredDriversForQuery(filters, { limit: 0 });
+  if (!rows || taskId !== loadTaskId) {
     return;
   }
-  applyFilterResults(rows);
+  if (!rows.length) {
+    showState("当前条件没有可导出的司机。");
+    hideLoadProgress(taskId);
+    return;
+  }
   downloadCsv(rows);
+  hideLoadProgress(taskId);
 }
 
 searchButton.addEventListener("click", async () => {
@@ -2007,14 +2432,28 @@ searchButton.addEventListener("click", async () => {
     renderList([]);
     return;
   }
-  await ensureDriversForFilters(filters);
-  if (/^\d{6,}$/.test(filters.driver_id)) {
-    const rows = filteredDrivers(filters, allDrivers.length);
-    applyFilterResults(rows);
+  const taskId = startLoadTask(4, "正在准备查询...");
+  if (hasDirectSearchOnly(filters)) {
+    try {
+      await runDirectDriverSearch(filters.driver_id, filters.dt);
+    } catch (error) {
+      showState(`司机快照读取失败：${error.message}`);
+      hideLoadProgress(taskId);
+    }
     return;
   }
-  const rows = filteredDrivers(filters, allDrivers.length);
+  let rows;
+  if (/^\d{6,}$/.test(filters.driver_id)) {
+    rows = await filteredDriversForQuery(filters);
+    if (!rows || taskId !== loadTaskId) return;
+    applyFilterResults(rows);
+    hideLoadProgress(taskId);
+    return;
+  }
+  rows = await filteredDriversForQuery(filters);
+  if (!rows || taskId !== loadTaskId) return;
   applyFilterResults(rows);
+  hideLoadProgress(taskId);
 });
 
 driverIdInput.addEventListener("keydown", (event) => {
@@ -2106,11 +2545,14 @@ dateSelect?.addEventListener("date-filter-change", async () => {
   if (!staticDataReady) {
     return;
   }
-  await ensureDriversForFilters(currentFilters());
   if (!userHasRenderedResults) {
     return;
   }
-  loadList();
+  const taskId = startLoadTask(4, "正在切换数据日期...");
+  const rows = await filteredDriversForQuery(currentFilters());
+  if (!rows || taskId !== loadTaskId) return;
+  applyFilterResults(rows);
+  hideLoadProgress(taskId);
 });
 
 snapshotButton?.addEventListener("click", () => {

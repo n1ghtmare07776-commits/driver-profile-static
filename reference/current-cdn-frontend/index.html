@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>司机画像</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>风险前哨</title>
+    <link rel="stylesheet" href="styles.20260709082017.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -18,8 +18,8 @@
               </svg>
             </div>
             <div class="brand-titles">
-              <h1 class="brand-title">司机画像</h1>
-              <p class="brand-subtitle">DRIVER PROFILE</p>
+              <h1 class="brand-title">风险前哨</h1>
+              <p class="brand-subtitle">RISK SENTINEL</p>
             </div>
           </div>
           <div class="snapshot-meta brand-meta">
@@ -36,7 +36,13 @@
         <section class="filter-panel" aria-label="组合筛选">
           <label>
             司机ID
-            <input id="driverIdInput" type="search" placeholder="输入司机ID" />
+            <span class="search-input-wrap">
+              <svg class="search-input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <input id="driverIdInput" type="search" placeholder="输入司机ID" />
+            </span>
           </label>
           <label>
             城市（可多选）
@@ -100,7 +106,13 @@
             </div>
           </details>
           <div class="filter-actions">
-            <button id="searchButton">查询</button>
+            <button id="searchButton">
+              <svg class="button-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              查询
+            </button>
             <button id="resetButton" class="ghost-button" type="button">重置</button>
           </div>
         </section>
@@ -125,6 +137,6 @@
         <article id="profile" class="profile hidden"></article>
       </section>
     </main>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260713-performance-v3"></script>
   </body>
 </html>

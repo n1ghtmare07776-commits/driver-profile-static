@@ -25,11 +25,17 @@ def main():
         raise SystemExit(f"前端目录不存在：{frontend_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for name in ["index.html", "app.js", "styles.css"]:
+    frontend_files = ["index.html", "app.js", "styles.css"]
+    optional_files = ["filter-worker.js"]
+    for name in frontend_files:
         source = frontend_dir / name
         if not source.exists():
             raise SystemExit(f"缺少前端文件：{source}")
         shutil.copy2(source, out_dir / name)
+    for name in optional_files:
+        source = frontend_dir / name
+        if source.exists():
+            shutil.copy2(source, out_dir / name)
 
     build_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     app_file = out_dir / f"app.{build_id}.js"
@@ -40,7 +46,7 @@ def main():
     index_file = out_dir / "index.html"
     html = index_file.read_text(encoding="utf-8")
     html = re.sub(r'href="styles(?:\.[0-9]+)?\.css"', f'href="{styles_file.name}"', html)
-    html = re.sub(r'src="app(?:\.[0-9]+)?\.js"', f'src="{app_file.name}"', html)
+    html = re.sub(r'src="app(?:\.[0-9]+)?\.js(?:\?[^\"]*)?"', f'src="{app_file.name}"', html)
     index_file.write_text(html, encoding="utf-8")
 
     for old_file in out_dir.glob("app.*.js"):

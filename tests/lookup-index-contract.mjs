@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+import zlib from "node:zlib";
+
+const dataDir = new URL("../dist/data/", import.meta.url);
+const index = JSON.parse(fs.readFileSync(new URL("driver-lookup-index.json", dataDir), "utf8"));
+const paths = Object.values(index.files || {});
+assert.ok(paths.length > 0, "司机直达索引没有分片");
+assert.equal(index.shardMode, "fnv1a32-modulo", "司机直达索引未使用均匀哈希分桶");
+assert.equal(index.bucketCount, 128, "司机直达索引分桶数异常");
+assert.ok(paths.every((path) => path.endsWith(".json.gz")), "司机直达索引仍含未压缩分片");
+const maxShardBytes = Math.max(...paths.map((path) => fs.statSync(new URL(path, dataDir)).size));
+assert.ok(maxShardBytes < 2 * 1024 * 1024, `司机直达索引单分片过大：${maxShardBytes} bytes`);
+const sample = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL(paths[0], dataDir))).toString("utf8"));
+assert.equal(sample.mode, "driver-direct-lookup-compact");
+assert.ok(Array.isArray(sample.rows));
+const driverIdIndex = sample.schema.indexOf("driverId");
+const sampleDriverId = String(sample.rows[0][driverIdIndex]);
+const appSource = fs.readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");
+const functionStart = appSource.indexOf("function directLookupShard");
+const functionEnd = appSource.indexOf("async function findDirectDriverLocation", functionStart);
+const context = {};
+vm.createContext(context);
+vm.runInContext(appSource.slice(functionStart, functionEnd), context);
+const expectedPath = index.files[context.directLookupShard(sampleDriverId, index)];
+assert.equal(expectedPath, paths[0], "前端与构建脚本的哈希分桶算法不一致");
+console.log(`司机直达索引契约通过：${paths.length} 个 gzip 分片，最大 ${(maxShardBytes / 1024).toFixed(1)}KB`);

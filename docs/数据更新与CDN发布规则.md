@@ -82,6 +82,10 @@ node scripts/write-static-manifest.mjs dist/data/manifest.json 2026-07-06
 python3 scripts/import-driver-data.py data/incoming/司机库数据_20260706.xlsx --upload-date 2026-07-06 --out-dir dist/data
 ```
 
+导入脚本会同时生成 `filter-index.json.gz` 和稳定哈希分桶的 `driver-lookup-index.json`、`lookup/driver-bucket-*.json.gz`。前者只包含近 7 天组合筛选、列表排序所需字段，由 Web Worker 解压、筛选；后者用于完整司机 ID 直达查询，避免下载整日明细。哈希分桶不得改回司机 ID 前缀分片，否则集中前缀会形成过大的单文件并拖慢查询。
+
+所有派生索引生成完以后，脚本才按实际上传的整个 `dist/` 目录执行最终 800MB 包体统计并回写 manifest/meta；如果因上限剔除旧日期，必须同步重建两套索引，不能保留被剔除日期的旧索引记录。
+
 如果不传 `--upload-date`，脚本会优先从文件名中的 `YYYYMMDD` 推断上传日期；如果文件名没有日期，再使用数据列 `dt` 中的最大日期。
 
 ## 建议策略联动

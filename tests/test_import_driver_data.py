@@ -1,3 +1,4 @@
+import gzip
 import json
 import subprocess
 import sys
@@ -16,6 +17,9 @@ def test_import_driver_data_generates_stable_static_dataset():
     tmp_path = Path(tmp_root.name)
     source = tmp_path / "司机库数据_20260706.xlsx"
     output_dir = tmp_path / "dist" / "data"
+    frontend_path = output_dir.parent / "index.html"
+    frontend_path.parent.mkdir(parents=True, exist_ok=True)
+    frontend_path.write_text("x" * 8192, encoding="utf-8")
     stale_files = [
         output_dir / "drivers-2026-07-03-000.json",
         output_dir / "profiles-2026-07-03-000.json",
@@ -93,6 +97,11 @@ def test_import_driver_data_generates_stable_static_dataset():
     assert manifest["window_end"] == "2026-07-06"
     assert manifest["row_count"] == 1
     assert manifest["package_size_limit_mb"] == 800
+    actual_size_mb = round(
+        sum(path.stat().st_size for path in output_dir.parent.rglob("*") if path.is_file()) / 1024 / 1024,
+        3,
+    )
+    assert abs(manifest["package_size_mb"] - actual_size_mb) <= 0.001
 
     drivers = json.loads((output_dir / "drivers.json").read_text())
     assert drivers["mode"] == "daily-static-index"
@@ -119,6 +128,16 @@ def test_import_driver_data_generates_stable_static_dataset():
     assert "高龄司机" not in daily_text
     assert "建议关注司机服务时长" not in daily_text
     assert (output_dir / "strategy-rules.json").exists()
+    assert (output_dir / "filter-index.json.gz").exists()
+    assert not (output_dir / "filter-index.json").exists()
+    lookup_index = json.loads((output_dir / "driver-lookup-index.json").read_text())
+    assert lookup_index["source_dates"] == ["2026-07-06"]
+    assert lookup_index["driver_count"] == 1
+    assert lookup_index["files"]
+    assert all(path.endswith(".json.gz") for path in lookup_index["files"].values())
+    sample_lookup_path = output_dir / next(iter(lookup_index["files"].values()))
+    sample_lookup = json.loads(gzip.decompress(sample_lookup_path.read_bytes()))
+    assert sample_lookup["mode"] == "driver-direct-lookup-compact"
     assert not (output_dir / "driver-index.json").exists()
     assert not (output_dir / "profiles").exists()
     for stale_file in stale_files:
@@ -230,6 +249,8 @@ def test_import_driver_data_preserves_independent_daily_files_in_window():
     manifest = json.loads((output_dir / "manifest.json").read_text())
     assert manifest["row_count"] == 2
     assert manifest["data_mode"] == "daily_static"
+    lookup_index = json.loads((output_dir / "driver-lookup-index.json").read_text())
+    assert lookup_index["source_dates"] == ["2026-07-03", "2026-07-07"]
     tmp_root.cleanup()
 
 
@@ -309,6 +330,8 @@ def test_import_driver_data_drops_oldest_daily_files_when_package_exceeds_limit(
     assert manifest["dropped_dates"] == ["2026-07-03"]
     assert manifest["drop_reason"] == "package_size_limit"
     assert manifest["package_size_mb"] <= manifest["package_size_limit_mb"]
+    lookup_index = json.loads((output_dir / "driver-lookup-index.json").read_text())
+    assert lookup_index["source_dates"] == ["2026-07-07"]
     tmp_root.cleanup()
 
 

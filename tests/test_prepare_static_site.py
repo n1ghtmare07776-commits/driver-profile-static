@@ -30,7 +30,8 @@ def test_prepare_static_site_copies_frontend_files():
     assert (output_dir / "index.html").exists()
     assert (output_dir / "app.js").exists()
     assert (output_dir / "styles.css").exists()
-    assert "司机画像" in (output_dir / "index.html").read_text(encoding="utf-8")
+    assert (output_dir / "filter-worker.js").exists()
+    assert "风险前哨" in (output_dir / "index.html").read_text(encoding="utf-8")
     tmp_root.cleanup()
 
 
