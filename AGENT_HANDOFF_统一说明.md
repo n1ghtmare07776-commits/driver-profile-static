@@ -92,6 +92,7 @@ python3 scripts/build-direct-driver-lookup.py --data-dir dist/data --bucket-coun
 6. 将整个 `dist/` 目录递归上传至 CDN；入口必须是 `dist/index.html`。不能只传 HTML，不能只传 `drivers.json`，也不能遗漏 `driver-lookup-index.json`、`lookup/`、`filter-index.json.gz` 与 `filter-worker.js`。
 7. 每次部署使用新的 deploy-id 或刷新 CDN 缓存，确保 `index.html`、`app.js`、样式和 `data/` 同版本发布。
 8. 发布后返回 CDN 的 `index.html` 链接、manifest 实际日期和包大小。
+9. 每次接收并完成新一天数据更新后，无论用户是否再次提醒，最终回复都必须附上一段可直接交给公司内网 Agent 的完整部署提示词，包含项目目录、deploy-id、递归上传命令、manifest 验收口径和部署后检查项。
 
 ## 验收底线
 
