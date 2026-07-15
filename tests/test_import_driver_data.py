@@ -3,13 +3,31 @@ import json
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "import-driver-data.py"
+
+
+def load_import_module():
+    return SourceFileLoader("import_driver_data_test", str(SCRIPT)).load_module()
+
+
+def sample_driver(driver_id, data_date, city="北京市", company="示例公司", product="快车"):
+    return {
+        "driverId": driver_id,
+        "dataDate": data_date,
+        "city": city,
+        "company": company,
+        "product": product,
+        "strategyKeys": ["regular-care"],
+    }
 
 
 def test_import_driver_data_generates_stable_static_dataset():
@@ -143,9 +161,7 @@ def test_import_driver_data_generates_stable_static_dataset():
     for stale_file in stale_files:
         assert not stale_file.exists()
 
-    from importlib.machinery import SourceFileLoader
-
-    import_module = SourceFileLoader("import_driver_data", str(SCRIPT)).load_module()
+    import_module = load_import_module()
     driver = import_module.decode_daily_payload(daily_payload)[0]
     assert driver["driverId"] == "100000000001"
     assert driver["dataDate"] == "2026-07-06"
@@ -169,6 +185,114 @@ def test_import_driver_data_generates_stable_static_dataset():
     for disallowed_wording in ["\u521d\u7248", "\u53c2\u8003\u9608\u503c"]:
         assert disallowed_wording not in json.dumps(thresholds, ensure_ascii=False)
     assert "case均值" in json.dumps(thresholds, ensure_ascii=False)
+    tmp_root.cleanup()
+
+
+def test_build_dataset_summary_matches_loaded_window():
+    tmp_root = tempfile.TemporaryDirectory()
+    tmp_path = Path(tmp_root.name)
+    module = load_import_module()
+    drivers = [
+        sample_driver("1001", "2026-07-14", company="公司A"),
+        sample_driver("1002", "2026-07-15", city="上海市", company="公司B", product="专车"),
+    ]
+
+    summary = module.build_dataset_summary(tmp_path, drivers)
+
+    assert summary["row_count"] == 2
+    assert summary["dates"] == ["2026-07-14", "2026-07-15"]
+    assert sum(item["row_count"] for item in summary["daily_files"]) == 2
+    assert summary["filter_options"] == {
+        "cities": ["上海市", "北京市"],
+        "companies": ["公司A", "公司B"],
+        "products": ["专车", "快车"],
+        "dates": ["2026-07-14", "2026-07-15"],
+    }
+    tmp_root.cleanup()
+
+
+def test_write_static_indexes_uses_summary_without_reading_daily_files():
+    tmp_root = tempfile.TemporaryDirectory()
+    tmp_path = Path(tmp_root.name)
+    module = load_import_module()
+    summary = module.build_dataset_summary(
+        tmp_path,
+        [sample_driver("1001", "2026-07-15")],
+    )
+
+    with patch.object(module, "read_static_drivers_file", side_effect=AssertionError("daily file reread")):
+        module.write_static_indexes(
+            tmp_path,
+            summary,
+            "2026-07-15",
+            datetime.strptime("2026-07-09", "%Y-%m-%d").date(),
+            datetime.strptime("2026-07-15", "%Y-%m-%d").date(),
+            800,
+        )
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["row_count"] == 1
+    assert manifest["daily_files"][0]["row_count"] == 1
+    tmp_root.cleanup()
+
+
+def test_enforce_size_limit_reuses_summary_when_package_is_under_limit():
+    tmp_root = tempfile.TemporaryDirectory()
+    tmp_path = Path(tmp_root.name)
+    output_dir = tmp_path / "dist" / "data"
+    output_dir.mkdir(parents=True)
+    module = load_import_module()
+    summary = module.build_dataset_summary(
+        output_dir,
+        [sample_driver("1001", "2026-07-15")],
+    )
+
+    with patch.object(module, "load_daily_static_drivers", side_effect=AssertionError("window reloaded")):
+        returned_summary, size_control = module.enforce_size_limit(
+            output_dir,
+            "2026-07-15",
+            datetime.strptime("2026-07-09", "%Y-%m-%d").date(),
+            datetime.strptime("2026-07-15", "%Y-%m-%d").date(),
+            800,
+            summary,
+        )
+
+    assert returned_summary is summary
+    assert size_control["actual_dates"] == ["2026-07-15"]
+    assert size_control["dropped_dates"] == []
+    tmp_root.cleanup()
+
+
+def test_load_daily_static_drivers_rejects_file_date_mismatch():
+    tmp_root = tempfile.TemporaryDirectory()
+    tmp_path = Path(tmp_root.name)
+    output_dir = tmp_path / "dist" / "data"
+    daily_dir = output_dir / "daily"
+    daily_dir.mkdir(parents=True)
+    (daily_dir / "drivers-2026-07-14.json").write_text(
+        json.dumps(
+            {
+                "mode": "daily-static",
+                "date": "2026-07-15",
+                "drivers": [sample_driver("1001", "2026-07-15")],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    module = load_import_module()
+
+    try:
+        module.load_daily_static_drivers(
+            output_dir,
+            datetime.strptime("2026-07-14", "%Y-%m-%d").date(),
+            datetime.strptime("2026-07-15", "%Y-%m-%d").date(),
+        )
+    except ValueError as error:
+        assert "drivers-2026-07-14.json" in str(error)
+        assert "2026-07-15" in str(error)
+    else:
+        raise AssertionError("日文件名与司机数据日期不一致时应停止导入")
     tmp_root.cleanup()
 
 
@@ -337,5 +461,9 @@ def test_import_driver_data_drops_oldest_daily_files_when_package_exceeds_limit(
 
 if __name__ == "__main__":
     test_import_driver_data_generates_stable_static_dataset()
+    test_build_dataset_summary_matches_loaded_window()
+    test_write_static_indexes_uses_summary_without_reading_daily_files()
+    test_enforce_size_limit_reuses_summary_when_package_is_under_limit()
+    test_load_daily_static_drivers_rejects_file_date_mismatch()
     test_import_driver_data_preserves_independent_daily_files_in_window()
     test_import_driver_data_drops_oldest_daily_files_when_package_exceeds_limit()

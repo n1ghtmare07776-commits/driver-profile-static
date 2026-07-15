@@ -989,9 +989,18 @@ def load_daily_static_drivers(out_dir, window_start, window_end):
         match = re.fullmatch(r"drivers-(\d{4}-\d{2}-\d{2})\.json", path.name)
         if not match:
             continue
-        date_value = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        file_date = match.group(1)
+        date_value = datetime.strptime(file_date, "%Y-%m-%d").date()
         if window_start <= date_value <= window_end:
-            drivers.extend(read_static_drivers_file(path))
+            daily_drivers = read_static_drivers_file(path)
+            for driver in daily_drivers:
+                driver_date = normalize_date(driver.get("dataDate"))
+                if driver_date != file_date:
+                    raise ValueError(
+                        f"日文件 {path.name} 中存在数据日期 {driver_date or '空值'}，"
+                        f"应为 {file_date}。"
+                    )
+            drivers.extend(daily_drivers)
     return drivers
 
 
@@ -1019,35 +1028,63 @@ def build_filter_options(static_drivers, dates):
     }
 
 
-def build_meta_payload(static_drivers, dates, upload_date, window_start, window_end, daily_files, size_control=None):
-    payload = {
+def build_dataset_summary(out_dir, static_drivers):
+    dates = sorted_unique(item.get("dataDate") for item in static_drivers)
+    row_counts = {data_date: 0 for data_date in dates}
+    for driver in static_drivers:
+        data_date = clean_text(driver.get("dataDate"))
+        if data_date not in row_counts:
+            raise ValueError(f"司机数据日期无效：{data_date or '空值'}")
+        row_counts[data_date] += 1
+    daily_files = [
+        {
+            "date": data_date,
+            "path": f"daily/{daily_file_path(out_dir, data_date).name}",
+            "row_count": row_counts[data_date],
+        }
+        for data_date in dates
+    ]
+    summary = {
         "row_count": len(static_drivers),
-        "data_dates": dates,
+        "dates": dates,
+        "daily_files": daily_files,
+        "filter_options": build_filter_options(static_drivers, dates),
+    }
+    indexed_row_count = sum(item["row_count"] for item in daily_files)
+    if summary["row_count"] != indexed_row_count:
+        raise ValueError("数据摘要行数与每日文件行数不一致。")
+    return summary
+
+
+def build_meta_payload(summary, upload_date, window_start, window_end, size_control=None):
+    payload = {
+        "row_count": summary["row_count"],
+        "data_dates": summary["dates"],
         "upload_date": upload_date,
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
         "data_mode": "daily_static",
         "primary_data_file": "drivers.json",
-        "daily_files": daily_files,
+        "daily_files": summary["daily_files"],
     }
     if size_control:
         payload.update(size_control)
     return payload
 
 
-def build_manifest_payload(static_drivers, dates, upload_date, window_start, window_end, daily_files, size_limit_mb, size_control=None):
+def build_manifest_payload(summary, upload_date, window_start, window_end, size_limit_mb, size_control=None):
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "upload_date": upload_date,
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "row_count": len(static_drivers),
+        "row_count": summary["row_count"],
         "contains_queryable_driver_data": True,
         "data_mode": "daily_static",
         "primary_data_file": "drivers.json",
-        "daily_files": daily_files,
+        "daily_files": summary["daily_files"],
         "package_size_limit_mb": size_limit_mb,
-        "actual_dates": dates,
+        "actual_dates": summary["dates"],
         "dropped_dates": [],
         "package_size_mb": 0,
     }
@@ -1056,8 +1093,9 @@ def build_manifest_payload(static_drivers, dates, upload_date, window_start, win
     return payload
 
 
-def write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, size_limit_mb, size_control=None):
-    daily_files = daily_file_index(out_dir, dates)
+def write_static_indexes(out_dir, summary, upload_date, window_start, window_end, size_limit_mb, size_control=None):
+    dates = summary["dates"]
+    daily_files = summary["daily_files"]
     write_json(
         out_dir / "drivers.json",
         {
@@ -1067,20 +1105,18 @@ def write_static_indexes(out_dir, static_drivers, dates, upload_date, window_sta
             "files": daily_files,
         },
     )
-    write_pretty_json(out_dir / "filter-options.json", build_filter_options(static_drivers, dates))
+    write_pretty_json(out_dir / "filter-options.json", summary["filter_options"])
     write_pretty_json(
         out_dir / "meta.json",
-        build_meta_payload(static_drivers, dates, upload_date, window_start, window_end, daily_files, size_control),
+        build_meta_payload(summary, upload_date, window_start, window_end, size_control),
     )
     write_pretty_json(
         out_dir / "manifest.json",
         build_manifest_payload(
-            static_drivers,
-            dates,
+            summary,
             upload_date,
             window_start,
             window_end,
-            daily_files,
             size_limit_mb,
             size_control,
         ),
@@ -1088,14 +1124,13 @@ def write_static_indexes(out_dir, static_drivers, dates, upload_date, window_sta
     return daily_files
 
 
-def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limit_mb):
+def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limit_mb, summary):
     limit_bytes = int(size_limit_mb * 1024 * 1024)
     dropped_dates = []
-    static_drivers = load_daily_static_drivers(out_dir, window_start, window_end)
-    dates = sorted_unique(item["dataDate"] for item in static_drivers)
+    dates = list(summary["dates"])
     total_size = directory_size(release_root(out_dir))
     if total_size <= limit_bytes:
-        return static_drivers, dates, {
+        return summary, {
             "actual_dates": dates,
             "dropped_dates": dropped_dates,
             "drop_reason": "",
@@ -1111,11 +1146,11 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
             path.unlink()
         dropped_dates.append(data_date)
         static_drivers = load_daily_static_drivers(out_dir, window_start, window_end)
-        dates = sorted_unique(item["dataDate"] for item in static_drivers)
+        summary = build_dataset_summary(out_dir, static_drivers)
+        dates = summary["dates"]
         write_static_indexes(
             out_dir,
-            static_drivers,
-            dates,
+            summary,
             upload_date,
             window_start,
             window_end,
@@ -1144,8 +1179,7 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
         size_control["drop_reason"] = "package_size_limit_latest_day_exceeds_limit"
         write_static_indexes(
             out_dir,
-            static_drivers,
-            dates,
+            summary,
             upload_date,
             window_start,
             window_end,
@@ -1156,7 +1190,7 @@ def enforce_size_limit(out_dir, upload_date, window_start, window_end, size_limi
             f"最新日期静态产物仍有 {total_size} bytes，超过限制 {limit_bytes} bytes；"
             "需要继续按城市/分片拆分或改用后端 API。"
         )
-    return static_drivers, dates, size_control
+    return summary, size_control
 
 
 def build_filter_index(out_dir):
@@ -1238,20 +1272,22 @@ def main():
         )
 
     static_drivers = load_daily_static_drivers(out_dir, window_start, window_end)
-    dates = sorted_unique(item["dataDate"] for item in static_drivers)
-    write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, args.size_limit_mb)
+    summary = build_dataset_summary(out_dir, static_drivers)
+    write_static_indexes(out_dir, summary, upload_date, window_start, window_end, args.size_limit_mb)
+    del static_drivers
     write_pretty_json(
         out_dir / "strategy-thresholds.json",
         strategy_threshold_summary(strategy_config, window_rows, reference_rows, reference_path, reference_stats),
     )
     write_pretty_json(out_dir / "strategy-rules.json", strategy_config)
     build_derived_indexes(out_dir)
-    static_drivers, dates, size_control = enforce_size_limit(
+    summary, size_control = enforce_size_limit(
         out_dir,
         upload_date,
         window_start,
         window_end,
         args.size_limit_mb,
+        summary,
     )
     size_control.update(
         {
@@ -1262,10 +1298,10 @@ def main():
     )
     total_size = directory_size(release_root(out_dir))
     size_control["package_size_mb"] = round(total_size / 1024 / 1024, 3)
-    write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, args.size_limit_mb, size_control)
+    write_static_indexes(out_dir, summary, upload_date, window_start, window_end, args.size_limit_mb, size_control)
     total_size = directory_size(release_root(out_dir))
     size_control["package_size_mb"] = round(total_size / 1024 / 1024, 3)
-    write_static_indexes(out_dir, static_drivers, dates, upload_date, window_start, window_end, args.size_limit_mb, size_control)
+    write_static_indexes(out_dir, summary, upload_date, window_start, window_end, args.size_limit_mb, size_control)
 
     print(f"输入文件：{source_path}")
     print(f"输出目录：{out_dir}")
@@ -1273,8 +1309,8 @@ def main():
     print(f"策略配置：{args.strategy_config}")
     print(f"参考样本：{reference_path or '未找到，无法计算 case均值的策略将不触发'}")
     print(f"本次导入司机数据：{len(imported_static_drivers)} 条")
-    print(f"窗口内司机数据：{len(static_drivers)} 条")
-    print(f"独立日期文件：{', '.join(dates) if dates else '无'}")
+    print(f"窗口内司机数据：{summary['row_count']} 条")
+    print(f"独立日期文件：{', '.join(summary['dates']) if summary['dates'] else '无'}")
     if size_control.get("dropped_dates"):
         print(f"因 {args.size_limit_mb:g}MB 上限剔除日期：{', '.join(size_control['dropped_dates'])}")
     print(f"输出大小：{total_size} bytes")
