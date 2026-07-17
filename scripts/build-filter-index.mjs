@@ -10,7 +10,8 @@ const index = JSON.parse(fs.readFileSync(path.join(dataDir, "drivers.json"), "ut
 const schema = [
   "driverId", "city", "company", "product", "dataDate", "isOrganized", "age",
   "consecutive_days", "server_dur_hour", "order_cnt_21_09_7d_rate", "sleep_deprivation_days",
-  "riskTierRank", "riskTierScore", "tiredScore", "strategyKeys",
+  "riskTierRank", "riskTierScore", "tiredScore", "avgServiceDuration7d",
+  "serviceDurationSampleDays", "strategyKeys",
 ];
 const dictionaryFields = {
   city: "cities",
@@ -22,6 +23,22 @@ const dictionaryFields = {
 const dictionaries = Object.fromEntries(Object.values(dictionaryFields).map((key) => [key, new Set()]));
 dictionaries.strategyKeys = new Set();
 const records = [];
+const serviceDurationStats = new Map();
+
+function finiteNumber(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function recordServiceDuration(driverId, value) {
+  const number = finiteNumber(value);
+  if (!driverId || number === null) return;
+  const current = serviceDurationStats.get(driverId) || { sum: 0, count: 0 };
+  current.sum += number;
+  current.count += 1;
+  serviceDurationStats.set(driverId, current);
+}
 
 for (const daily of index.files || []) {
   const payload = JSON.parse(fs.readFileSync(path.join(dataDir, daily.path), "utf8"));
@@ -42,10 +59,17 @@ for (const daily of index.files || []) {
         record[field] = sourceRow[fieldIndex[field]] ?? null;
       }
     }
+    recordServiceDuration(record.driverId, record.server_dur_hour);
     for (const [field, dictionary] of Object.entries(dictionaryFields)) dictionaries[dictionary].add(record[field]);
     for (const key of record.strategyKeys) dictionaries.strategyKeys.add(key);
     records.push(record);
   }
+}
+
+for (const record of records) {
+  const stats = serviceDurationStats.get(record.driverId);
+  record.avgServiceDuration7d = stats?.count ? stats.sum / stats.count : null;
+  record.serviceDurationSampleDays = stats?.count || 0;
 }
 
 const dict = Object.fromEntries(Object.entries(dictionaries).map(([key, values]) => [key, [...values].filter(Boolean).sort()]));

@@ -15,6 +15,8 @@ assert.ok(maxShardBytes < 2 * 1024 * 1024, `司机直达索引单分片过大：
 const sample = JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL(paths[0], dataDir))).toString("utf8"));
 assert.equal(sample.mode, "driver-direct-lookup-compact");
 assert.ok(Array.isArray(sample.rows));
+assert.ok(sample.schema.includes("avgServiceDuration7d"), "司机直达索引缺少七天平均时长");
+assert.ok(sample.schema.includes("serviceDurationSampleDays"), "司机直达索引缺少有效样本天数");
 const driverIdIndex = sample.schema.indexOf("driverId");
 const sampleDriverId = String(sample.rows[0][driverIdIndex]);
 const appSource = fs.readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");

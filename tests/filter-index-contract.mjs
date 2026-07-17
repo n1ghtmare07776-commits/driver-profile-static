@@ -9,7 +9,16 @@ const payload = JSON.parse(zlib.gunzipSync(fs.readFileSync(path)).toString("utf8
 assert.equal(payload.mode, "driver-filter-index-compact");
 assert.ok(Array.isArray(payload.schema));
 assert.ok(Array.isArray(payload.rows));
-for (const field of ["driverId", "dataDate", "city", "company", "product", "riskTierRank"]) {
+for (const field of [
+  "driverId",
+  "dataDate",
+  "city",
+  "company",
+  "product",
+  "riskTierRank",
+  "avgServiceDuration7d",
+  "serviceDurationSampleDays",
+]) {
   assert.ok(payload.schema.includes(field), `筛选索引缺少字段：${field}`);
 }
 

@@ -41,6 +41,8 @@ for (let requestId = 1; requestId <= 5; requestId += 1) {
 }
 const result = messages.findLast((message) => message.type === "result");
 if (!result || result.rows.length > 5000 || result.totalCount < result.rows.length) throw new Error("Worker 返回结构错误");
+if (!Object.hasOwn(result.rows[0] || {}, "avgServiceDuration7d")) throw new Error("Worker 缺少七天平均时长");
+if (!Object.hasOwn(result.rows[0] || {}, "serviceDurationSampleDays")) throw new Error("Worker 缺少有效样本天数");
 console.log(JSON.stringify({
   initMs: Math.round(initMs),
   queryMs: queryTimes.map(Math.round),
