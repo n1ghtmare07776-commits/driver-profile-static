@@ -71,11 +71,11 @@ assert.equal(
 );
 assert.equal(sandbox.formatDateWindow(["2026-07-08"]), "2026/07/08");
 assert.equal(sandbox.formatDateWindow([]), "暂无日期");
-assert.equal(sandbox.formatAverageServiceDuration(3.1911), "3.19");
-assert.equal(sandbox.formatAverageServiceDuration(3.5), "3.5");
-assert.equal(sandbox.formatAverageServiceDuration(0), "0");
-assert.equal(sandbox.formatAverageServiceDuration("NaN"), "");
-assert.equal(sandbox.formatAverageServiceDuration(undefined), "");
+assert.equal(sandbox.formatAverageOnlineDuration(3.1911), "3.19");
+assert.equal(sandbox.formatAverageOnlineDuration(3.5), "3.5");
+assert.equal(sandbox.formatAverageOnlineDuration(0), "0");
+assert.equal(sandbox.formatAverageOnlineDuration("NaN"), "");
+assert.equal(sandbox.formatAverageOnlineDuration(undefined), "");
 
 assert.equal(
   sandbox.initialDateFilter({
@@ -161,8 +161,7 @@ const decodedDirectLookup = sandbox.decodeDirectLookupPayload({
     "company",
     "product",
     "dataDate",
-    "avgServiceDuration7d",
-    "serviceDurationSampleDays",
+    "avgOnlineDuration7d",
     "strategyKeys",
     "strategyEvidence",
   ],
@@ -173,10 +172,9 @@ const decodedDirectLookup = sandbox.decodeDirectLookupPayload({
     dates: ["2026-07-06"],
     strategyKeys: ["regular-care"],
   },
-  rows: [["100000000001", 0, 0, 0, 0, 3.1911, 4, [0], [null]]],
+  rows: [["100000000001", 0, 0, 0, 0, 3.1911, [0], [null]]],
 });
-assert.equal(decodedDirectLookup[0].avgServiceDuration7d, 3.1911);
-assert.equal(decodedDirectLookup[0].serviceDurationSampleDays, 4);
+assert.equal(decodedDirectLookup[0].avgOnlineDuration7d, 3.1911);
 
 const largeDriverBatch = Array.from({ length: 250000 }, (_, index) => ({ driverId: String(index) }));
 const mergedDriverRows = [];
@@ -185,10 +183,10 @@ assert.equal(mergedDriverRows.length, largeDriverBatch.length);
 assert.equal(mergedDriverRows[249999].driverId, "249999");
 
 const weeklyBestRows = sandbox.deduplicateBestRankedDrivers([
-  { driverId: "100000000001", dataDate: "2026-07-03", riskTierRank: 120, city: "北京市", server_dur_hour: 2 },
-  { driverId: "100000000001", dataDate: "2026-07-08", riskTierRank: 8, city: "上海市", server_dur_hour: 4 },
-  { driverId: "100000000002", dataDate: "2026-07-07", riskTierRank: 50001, city: "广州市", server_dur_hour: null },
-  { driverId: "100000000002", dataDate: "2026-07-08", riskTierRank: "", city: "深圳市", server_dur_hour: 0 },
+  { driverId: "100000000001", dataDate: "2026-07-03", riskTierRank: 120, city: "北京市", lately_7d_except_sub_online_dur_hour: 14 },
+  { driverId: "100000000001", dataDate: "2026-07-08", riskTierRank: 8, city: "上海市", lately_7d_except_sub_online_dur_hour: 21 },
+  { driverId: "100000000002", dataDate: "2026-07-07", riskTierRank: 50001, city: "广州市", lately_7d_except_sub_online_dur_hour: null },
+  { driverId: "100000000002", dataDate: "2026-07-08", riskTierRank: "", city: "深圳市", lately_7d_except_sub_online_dur_hour: 0 },
 ]);
 assert.deepEqual(
   JSON.parse(JSON.stringify(weeklyBestRows.map((driver) => ({
@@ -196,8 +194,7 @@ assert.deepEqual(
     dataDate: driver.dataDate,
     riskTierRank: driver.riskTierRank,
     bestRiskTierRank: driver.bestRiskTierRank,
-    avgServiceDuration7d: driver.avgServiceDuration7d,
-    serviceDurationSampleDays: driver.serviceDurationSampleDays,
+    avgOnlineDuration7d: driver.avgOnlineDuration7d,
   })))),
   [
     {
@@ -205,16 +202,14 @@ assert.deepEqual(
       dataDate: "2026-07-08",
       riskTierRank: 8,
       bestRiskTierRank: 8,
-      avgServiceDuration7d: 3,
-      serviceDurationSampleDays: 2,
+      avgOnlineDuration7d: 3,
     },
     {
       driverId: "100000000002",
       dataDate: "2026-07-07",
       riskTierRank: 50001,
       bestRiskTierRank: 50001,
-      avgServiceDuration7d: 0,
-      serviceDurationSampleDays: 1,
+      avgOnlineDuration7d: null,
     },
   ],
 );
@@ -246,13 +241,12 @@ const guardedSummary = sandbox.buildSummaryForDriver({
   company: null,
   consecutive_days: Number.NaN,
   server_dur_hour: 0,
-  avgServiceDuration7d: 3.1911,
-  serviceDurationSampleDays: 4,
+  avgOnlineDuration7d: 3.1911,
   order_cnt_21_09_7d_rate: "",
   sleep_deprivation_days: "NaN",
   dataDate: "2026-07-09",
 }, [{ key: "regular-care", title: "常规关怀" }]);
-assert.equal(guardedSummary, "快车，周平均服务时长3.19小时/日，数据日期2026-07-09。");
+assert.equal(guardedSummary, "快车，近7天日均在线时长3.19小时/日，数据日期2026-07-09。");
 assert.doesNotMatch(guardedSummary, /暂无数据岁|NaN|undefined|null/);
 
 assert.deepEqual(
@@ -340,8 +334,7 @@ const compactProfile = sandbox.resolveStaticProfile({
   riskTierScore: 82.1,
   tiredScore: 76.3,
   isOrganized: "是",
-  avgServiceDuration7d: 3.1911,
-  serviceDurationSampleDays: 4,
+  avgOnlineDuration7d: 3.1911,
   strategyKeys: ["senior-driver"],
   strategyEvidence: {
     "senior-driver": [["age", 56, 52.5]],
@@ -351,14 +344,15 @@ assert.equal(compactProfile.driverId, "100000000001");
 assert.equal(compactProfile.meta.dataDate, "2026-07-06");
 assert.equal(compactProfile.groups[0].items[0].displayValue, "北京市");
 assert.equal(compactProfile.groups[0].items[5].displayValue, "是");
-assert.equal(compactProfile.header.subtitle, "北京市 · 快车 · 示例公司A · 56岁 · 七天平均时长 3.19h/日");
+assert.equal(compactProfile.header.subtitle, "北京市 · 快车 · 示例公司A · 56岁 · 近7天日均在线时长 3.19h/日");
 assert.equal(compactProfile.strategies[0].title, "高龄司机");
 assert.equal(compactProfile.strategies[0].evidence, "司机年龄56岁，高于case均值52.5岁。");
 assert.equal(compactProfile.strategies[0].badges[0].label, "可解释");
 assert.match(compactProfile.strategies[0].translation.driver_script, /身体状态/);
 assert.doesNotMatch(compactProfile.strategies[0].translation.copy_text, /case均值|死亡case|阈值/);
 assert.match(compactProfile.summary, /56岁，北京市，快车，示例公司A/);
-assert.match(compactProfile.summary, /周平均服务时长3.19小时\/日/);
+assert.match(compactProfile.summary, /近7天日均在线时长3.19小时\/日/);
+assert.doesNotMatch(compactProfile.summary, /周平均服务时长|七天平均时长/);
 assert.match(compactProfile.summary, /重点关注：高龄司机。/);
 assert.doesNotMatch(
   sandbox.renderSourceMeta(compactProfile),

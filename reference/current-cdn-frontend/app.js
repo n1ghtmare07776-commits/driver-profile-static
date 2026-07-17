@@ -239,7 +239,7 @@ function finiteMetricNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function formatAverageServiceDuration(value) {
+function formatAverageOnlineDuration(value) {
   const number = finiteMetricNumber(value);
   return number === null ? "" : Number(number.toFixed(2)).toString();
 }
@@ -475,8 +475,7 @@ function decodeDirectLookupPayload(payload) {
       age: raw.age,
       consecutive_days: raw.consecutive_days,
       server_dur_hour: raw.server_dur_hour,
-      avgServiceDuration7d: raw.avgServiceDuration7d,
-      serviceDurationSampleDays: raw.serviceDurationSampleDays,
+      avgOnlineDuration7d: raw.avgOnlineDuration7d,
       server_dur_hour_30d: raw.server_dur_hour_30d,
       server_dur_sum_30d: raw.server_dur_sum_30d,
       order_cnt_21_09_7d_rate: raw.order_cnt_21_09_7d_rate,
@@ -930,18 +929,10 @@ function compareFilteredDrivers(left, right) {
 
 function deduplicateBestRankedDrivers(rows) {
   const bestByDriver = new Map();
-  const serviceDurationStats = new Map();
   (Array.isArray(rows) ? rows : []).forEach((driver) => {
     const driverId = String(driver?.driverId || "").trim();
     if (!driverId) {
       return;
-    }
-    const serviceDuration = finiteMetricNumber(driver.server_dur_hour);
-    if (serviceDuration !== null) {
-      const stats = serviceDurationStats.get(driverId) || { sum: 0, count: 0 };
-      stats.sum += serviceDuration;
-      stats.count += 1;
-      serviceDurationStats.set(driverId, stats);
     }
     const currentRank = rankNumber(driver.riskTierRank);
     const existing = bestByDriver.get(driverId);
@@ -957,11 +948,10 @@ function deduplicateBestRankedDrivers(rows) {
     }
   });
   return Array.from(bestByDriver.values()).map((driver) => {
-    const stats = serviceDurationStats.get(driver.driverId);
+    const rollingOnlineDuration = finiteMetricNumber(driver.lately_7d_except_sub_online_dur_hour);
     return {
       ...driver,
-      avgServiceDuration7d: stats?.count ? stats.sum / stats.count : null,
-      serviceDurationSampleDays: stats?.count || 0,
+      avgOnlineDuration7d: rollingOnlineDuration === null ? null : rollingOnlineDuration / 7,
     };
   });
 }
@@ -1588,13 +1578,13 @@ function profileAvatarLabel() {
 }
 
 function conciseProfileSubtitle(driver) {
-  const averageServiceDuration = formatAverageServiceDuration(driver.avgServiceDuration7d);
+  const averageOnlineDuration = formatAverageOnlineDuration(driver.avgOnlineDuration7d);
   return [
     displayableText(driver.city),
     displayableText(driver.product),
     displayableText(driver.company),
     summaryPhrase(driver.age, { suffix: "岁" }),
-    averageServiceDuration ? `七天平均时长 ${averageServiceDuration}h/日` : "",
+    averageOnlineDuration ? `近7天日均在线时长 ${averageOnlineDuration}h/日` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1936,14 +1926,14 @@ function resolveStrategiesForDriver(driver, ruleIndex = strategyRuleIndex) {
 }
 
 function buildSummaryForDriver(driver, strategies = resolveStrategiesForDriver(driver)) {
-  const averageServiceDuration = formatAverageServiceDuration(driver.avgServiceDuration7d);
+  const averageOnlineDuration = formatAverageOnlineDuration(driver.avgOnlineDuration7d);
   const base = [
     summaryPhrase(driver.age, { suffix: "岁" }),
     displayableText(driver.city),
     displayableText(driver.product),
     displayableText(driver.company),
     summaryPhrase(driver.consecutive_days, { prefix: "连续出车", suffix: "天" }),
-    averageServiceDuration ? `周平均服务时长${averageServiceDuration}小时/日` : "",
+    averageOnlineDuration ? `近7天日均在线时长${averageOnlineDuration}小时/日` : "",
     summaryPhrase(driver.order_cnt_21_09_7d_rate, { prefix: "夜间出车占比" }),
     summaryPhrase(driver.sleep_deprivation_days, { prefix: "睡眠不足", suffix: "天" }),
     summaryPhrase(driver.dataDate, { prefix: "数据日期" }),

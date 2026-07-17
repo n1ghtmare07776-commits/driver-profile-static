@@ -26,8 +26,7 @@ DIRECT_SCHEMA = [
     "age",
     "consecutive_days",
     "server_dur_hour",
-    "avgServiceDuration7d",
-    "serviceDurationSampleDays",
+    "avgOnlineDuration7d",
     "server_dur_hour_30d",
     "server_dur_sum_30d",
     "order_cnt_21_09_7d_rate",
@@ -126,6 +125,7 @@ def compact_record(payload, row):
         "age": raw.get("age"),
         "consecutive_days": raw.get("consecutive_days"),
         "server_dur_hour": raw.get("server_dur_hour"),
+        "lately_7d_except_sub_online_dur_hour": raw.get("lately_7d_except_sub_online_dur_hour"),
         "server_dur_hour_30d": raw.get("server_dur_hour_30d"),
         "server_dur_sum_30d": raw.get("server_dur_sum_30d"),
         "order_cnt_21_09_7d_rate": raw.get("order_cnt_21_09_7d_rate"),
@@ -237,14 +237,8 @@ def main():
         total_records = 0
         for candidate_path in sorted(temp_dir.glob("*.jsonl")):
             best_by_driver = {}
-            service_stats = {}
             for line in candidate_path.read_text(encoding="utf-8").splitlines():
                 record = json.loads(line)
-                service_duration = finite_number(record.get("server_dur_hour"))
-                if service_duration is not None:
-                    stats = service_stats.setdefault(record["driverId"], {"sum": 0.0, "count": 0})
-                    stats["sum"] += service_duration
-                    stats["count"] += 1
                 current = best_by_driver.get(record["driverId"])
                 if current is None or (
                     number_rank(record.get("riskTierRank")), record.get("dataDate", "")
@@ -253,11 +247,12 @@ def main():
                 ):
                     best_by_driver[record["driverId"]] = record
             for record in best_by_driver.values():
-                stats = service_stats.get(record["driverId"], {"sum": 0.0, "count": 0})
-                record["avgServiceDuration7d"] = (
-                    stats["sum"] / stats["count"] if stats["count"] else None
+                rolling_online_duration = finite_number(
+                    record.get("lately_7d_except_sub_online_dur_hour")
                 )
-                record["serviceDurationSampleDays"] = stats["count"]
+                record["avgOnlineDuration7d"] = (
+                    rolling_online_duration / 7 if rolling_online_duration is not None else None
+                )
             shard = str(int(candidate_path.stem))
             records = sorted(best_by_driver.values(), key=lambda record: record["driverId"])
             output_name = f"driver-bucket-{int(shard):04d}.json.gz"

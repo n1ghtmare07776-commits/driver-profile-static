@@ -16,11 +16,12 @@ for (const field of [
   "company",
   "product",
   "riskTierRank",
-  "avgServiceDuration7d",
-  "serviceDurationSampleDays",
+  "avgOnlineDuration7d",
 ]) {
   assert.ok(payload.schema.includes(field), `筛选索引缺少字段：${field}`);
 }
+assert.equal(payload.schema.includes("avgServiceDuration7d"), false);
+assert.equal(payload.schema.includes("serviceDurationSampleDays"), false);
 
 const appSource = fs.readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");
 assert.match(appSource, /new Worker\("filter-worker\.js\?v=20260713-performance-v3"\)/);

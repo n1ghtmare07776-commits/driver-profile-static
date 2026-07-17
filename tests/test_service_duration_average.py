@@ -9,13 +9,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPORT_SCRIPT = ROOT / "scripts" / "import-driver-data.py"
+BACKFILL_SCRIPT = ROOT / "scripts" / "backfill-seven-day-online-duration.py"
 
 
 def load_import_module():
     return SourceFileLoader("service_average_import", str(IMPORT_SCRIPT)).load_module()
 
 
-def sample_driver(driver_id, service_duration, rank):
+def sample_driver(driver_id, rolling_online_duration, rank):
     item = {
         "driverId": driver_id,
         "city": "北京市",
@@ -25,8 +26,8 @@ def sample_driver(driver_id, service_duration, rank):
         "riskTierRank": rank,
         "strategyKeys": ["regular-care"],
     }
-    if service_duration is not None:
-        item["server_dur_hour"] = service_duration
+    if rolling_online_duration is not None:
+        item["lately_7d_except_sub_online_dur_hour"] = rolling_online_duration
     return item
 
 
@@ -42,15 +43,14 @@ def decode_lookup_rows(data_dir):
             decoded.append(
                 {
                     "driverId": str(raw.get("driverId") or ""),
-                    "avgServiceDuration7d": raw.get("avgServiceDuration7d"),
-                    "serviceDurationSampleDays": raw.get("serviceDurationSampleDays"),
+                    "avgOnlineDuration7d": raw.get("avgOnlineDuration7d"),
                     "dataDate": dictionary.get("dates", [])[raw["dataDate"]],
                 }
             )
     return decoded
 
 
-def test_derived_indexes_aggregate_available_service_duration_snapshots():
+def test_derived_indexes_use_rolling_seven_day_online_duration():
     temp_root = tempfile.TemporaryDirectory()
     data_dir = Path(temp_root.name) / "dist" / "data"
     daily_dir = data_dir / "daily"
@@ -60,14 +60,15 @@ def test_derived_indexes_aggregate_available_service_duration_snapshots():
         (
             "2026-07-13",
             [
-                sample_driver("1001", 2, 30),
+                sample_driver("1001", 14, 30),
                 sample_driver("1002", None, 60),
+                sample_driver("1003", 14, 5),
             ],
         ),
         (
             "2026-07-14",
             [
-                sample_driver("1001", 4, 20),
+                sample_driver("1001", 21, 20),
                 sample_driver("1002", None, 50),
             ],
         ),
@@ -123,28 +124,76 @@ def test_derived_indexes_aggregate_available_service_duration_snapshots():
     filter_payload = json.loads(gzip.decompress((data_dir / "filter-index.json.gz").read_bytes()))
     filter_schema = filter_payload["schema"]
     driver_id_index = filter_schema.index("driverId")
-    average_index = filter_schema.index("avgServiceDuration7d")
-    sample_days_index = filter_schema.index("serviceDurationSampleDays")
+    average_index = filter_schema.index("avgOnlineDuration7d")
     driver_1001_rows = [row for row in filter_payload["rows"] if str(row[driver_id_index]) == "1001"]
     driver_1002_rows = [row for row in filter_payload["rows"] if str(row[driver_id_index]) == "1002"]
 
     assert len(driver_1001_rows) == 3
-    assert all(row[average_index] == 2 for row in driver_1001_rows)
-    assert all(row[sample_days_index] == 3 for row in driver_1001_rows)
+    assert sorted(row[average_index] for row in driver_1001_rows) == [0, 2, 3]
     assert len(driver_1002_rows) == 3
     assert all(row[average_index] is None for row in driver_1002_rows)
-    assert all(row[sample_days_index] == 0 for row in driver_1002_rows)
+    assert "avgServiceDuration7d" not in filter_schema
+    assert "serviceDurationSampleDays" not in filter_schema
 
     lookup_rows = decode_lookup_rows(data_dir)
     driver_1001_lookup = next(item for item in lookup_rows if item["driverId"] == "1001")
     driver_1002_lookup = next(item for item in lookup_rows if item["driverId"] == "1002")
-    assert driver_1001_lookup["avgServiceDuration7d"] == 2
-    assert driver_1001_lookup["serviceDurationSampleDays"] == 3
+    driver_1003_lookup = next(item for item in lookup_rows if item["driverId"] == "1003")
+    assert driver_1001_lookup["avgOnlineDuration7d"] == 0
     assert driver_1001_lookup["dataDate"] == "2026-07-15"
-    assert driver_1002_lookup["avgServiceDuration7d"] is None
-    assert driver_1002_lookup["serviceDurationSampleDays"] == 0
+    assert driver_1002_lookup["avgOnlineDuration7d"] is None
+    assert driver_1003_lookup["avgOnlineDuration7d"] == 2
+    temp_root.cleanup()
+
+
+def test_backfill_preserves_rows_and_adds_rolling_online_field():
+    temp_root = tempfile.TemporaryDirectory()
+    root = Path(temp_root.name)
+    data_dir = root / "dist" / "data"
+    daily_dir = data_dir / "daily"
+    daily_dir.mkdir(parents=True)
+    source_path = root / "source.csv"
+    source_path.write_text(
+        "司机id,近7日非预约单在线时长（小时）\n1001,14\n1002,0\n",
+        encoding="utf-8",
+    )
+    daily_path = daily_dir / "drivers-2026-07-15.json"
+    daily_path.write_text(
+        json.dumps(
+            {
+                "mode": "daily-static-compact",
+                "date": "2026-07-15",
+                "schema": ["driverId", "riskTierRank"],
+                "dict": {},
+                "rows": [["1001", 1], ["1002", 2], ["1003", 3]],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(BACKFILL_SCRIPT),
+            "--data-dir",
+            str(data_dir),
+            "--date-source",
+            f"2026-07-15={source_path}",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(daily_path.read_text(encoding="utf-8"))
+    assert len(payload["rows"]) == 3
+    value_index = payload["schema"].index("lately_7d_except_sub_online_dur_hour")
+    assert [row[value_index] for row in payload["rows"]] == [14, 0, None]
     temp_root.cleanup()
 
 
 if __name__ == "__main__":
-    test_derived_indexes_aggregate_available_service_duration_snapshots()
+    test_derived_indexes_use_rolling_seven_day_online_duration()
+    test_backfill_preserves_rows_and_adds_rolling_online_field()
